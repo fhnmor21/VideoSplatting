@@ -19,13 +19,22 @@ from pathlib import Path
 
 from config.settings import PipelineConfig
 from pipeline.utils import (
-    CommandError, check_tool, log_header, log_info,
-    log_success, log_warn, probe_video, run,
+    CommandError,
+    check_tool,
+    log_header,
+    log_info,
+    log_success,
+    log_warn,
+    probe_video,
+    run,
 )
 
 
 class FrameExtractor:
+    """Extract representative frames from input video using scene changes."""
+
     def __init__(self, config: PipelineConfig) -> None:
+        """Store shared pipeline configuration for frame extraction."""
         self.cfg = config
 
     # ------------------------------------------------------------------ #
@@ -33,6 +42,7 @@ class FrameExtractor:
     # ------------------------------------------------------------------ #
 
     def run(self) -> bool:
+        """Execute frame extraction and validate that output frames were produced."""
         log_header("Stage 1 — Frame Extraction")
 
         if not check_tool("ffmpeg", "Install: https://ffmpeg.org/download.html"):
@@ -44,7 +54,9 @@ class FrameExtractor:
         if self.cfg.resume:
             existing = list(frames_dir.glob("frame_*.jpg"))
             if existing:
-                log_info(f"Resume: found {len(existing)} existing frames — skipping extraction.")
+                log_info(
+                    f"Resume: found {len(existing)} existing frames — skipping extraction."
+                )
                 return True
 
         # Probe the video for metadata
@@ -71,7 +83,9 @@ class FrameExtractor:
 
         if n == 0 and not self.cfg.dry_run:
             log_warn("No frames were extracted!")
-            log_warn(f"  Try lowering --scene-threshold (current: {self.cfg.scene_threshold})")
+            log_warn(
+                f"  Try lowering --scene-threshold (current: {self.cfg.scene_threshold})"
+            )
             log_warn(f"  Or lower --max-gap (current: {self.cfg.max_gap}s)")
             return False
 
@@ -110,10 +124,10 @@ class FrameExtractor:
         Commas inside the expression must be escaped as \\, for ffmpeg's
         filter-graph parser.
         """
-        T   = self.cfg.scene_threshold
+        T = self.cfg.scene_threshold
         MIN = self.cfg.min_gap
         MAX = self.cfg.max_gap
-        Q   = self.cfg.frame_quality
+        Q = self.cfg.frame_quality
 
         # Build the select expression (escaped commas)
         select_expr = (
@@ -125,11 +139,16 @@ class FrameExtractor:
 
         return [
             "ffmpeg",
-            "-i", str(self.cfg.video),
-            "-vf", f"select='{select_expr}'",
-            "-vsync", "vfr",       # variable frame rate — only output selected frames
-            "-qscale:v", str(Q),   # JPEG quality
-            "-frame_pts", "true",  # embed PTS in output (helps with ordering checks)
+            "-i",
+            str(self.cfg.video),
+            "-vf",
+            f"select='{select_expr}'",
+            "-vsync",
+            "vfr",  # variable frame rate — only output selected frames
+            "-qscale:v",
+            str(Q),  # JPEG quality
+            "-frame_pts",
+            "true",  # embed PTS in output (helps with ordering checks)
             output_pattern,
         ]
 
@@ -138,6 +157,7 @@ class FrameExtractor:
     # ------------------------------------------------------------------ #
 
     def _print_video_info(self, info: dict) -> None:
+        """Log source video metadata and active extraction parameters."""
         log_info(f"Video      : {self.cfg.video.name}")
         if info.get("width"):
             log_info(f"Resolution : {info['width']} × {info['height']}")

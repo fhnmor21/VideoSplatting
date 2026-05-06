@@ -25,20 +25,22 @@ from typing import List, Optional, Sequence, Tuple
 # Logging
 # ─────────────────────────────────────────────────────────────────────────────
 
-RESET  = "\033[0m"
-BOLD   = "\033[1m"
-GREEN  = "\033[32m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+GREEN = "\033[32m"
 YELLOW = "\033[33m"
-RED    = "\033[31m"
-CYAN   = "\033[36m"
-DIM    = "\033[2m"
+RED = "\033[31m"
+CYAN = "\033[36m"
+DIM = "\033[2m"
 
 
 def _ts() -> str:
+    """Return current local time formatted for log prefixes."""
     return time.strftime("%H:%M:%S")
 
 
 def log_header(title: str) -> None:
+    """Print a prominent section header for stage-level logging."""
     bar = "─" * 60
     print(f"\n{CYAN}{bar}{RESET}")
     print(f"{BOLD}{CYAN}  {title}{RESET}")
@@ -46,22 +48,27 @@ def log_header(title: str) -> None:
 
 
 def log_info(msg: str) -> None:
+    """Print an informational log line with timestamp."""
     print(f"{DIM}[{_ts()}]{RESET} {msg}")
 
 
 def log_success(msg: str) -> None:
+    """Print a success log line with timestamp and checkmark."""
     print(f"{DIM}[{_ts()}]{RESET} {GREEN}✓{RESET} {msg}")
 
 
 def log_warn(msg: str) -> None:
+    """Print a warning log line to stderr."""
     print(f"{DIM}[{_ts()}]{RESET} {YELLOW}⚠ {msg}{RESET}", file=sys.stderr)
 
 
 def log_error(msg: str) -> None:
+    """Print an error log line to stderr."""
     print(f"{DIM}[{_ts()}]{RESET} {RED}✗ {msg}{RESET}", file=sys.stderr)
 
 
 def log_cmd(args: Sequence) -> None:
+    """Print a shell-like representation of a command being executed."""
     joined = " \\\n    ".join(str(a) for a in args)
     print(f"{DIM}$ {joined}{RESET}")
 
@@ -69,6 +76,7 @@ def log_cmd(args: Sequence) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Command execution
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class CommandError(RuntimeError):
     """Raised when a subprocess exits with a non-zero return code."""
@@ -109,8 +117,12 @@ def run(
 
     if capture:
         result = subprocess.run(
-            str_args, cwd=cwd, env=merged_env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            str_args,
+            cwd=cwd,
+            env=merged_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
     else:
         # Stream output live
@@ -137,11 +149,7 @@ def run_in_conda(
     """
     str_args = [str(a) for a in args]
     cmd_str = " ".join(str_args)
-    bash_cmd = (
-        f'source "{conda_sh}" && '
-        f'conda activate "{env_name}" && '
-        f'{cmd_str}'
-    )
+    bash_cmd = f'source "{conda_sh}" && conda activate "{env_name}" && {cmd_str}'
     return run(
         ["bash", "-c", bash_cmd],
         dry_run=dry_run,
@@ -163,7 +171,9 @@ def find_conda_sh() -> Optional[Path]:
         try:
             result = subprocess.run(
                 ["conda", "info", "--base"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             base = result.stdout.strip()
             if base:
@@ -181,6 +191,7 @@ def find_conda_sh() -> Optional[Path]:
 # ffprobe helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def probe_video(video: Path) -> dict:
     """
     Return a dict with keys: duration, fps, width, height, frame_count.
@@ -191,12 +202,18 @@ def probe_video(video: Path) -> dict:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "quiet",
-                "-print_format", "json",
-                "-show_streams", "-show_format",
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-show_format",
                 str(video),
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         data = json.loads(result.stdout)
     except Exception:
@@ -205,7 +222,7 @@ def probe_video(video: Path) -> dict:
     info: dict = {}
     for stream in data.get("streams", []):
         if stream.get("codec_type") == "video":
-            info["width"]  = stream.get("width")
+            info["width"] = stream.get("width")
             info["height"] = stream.get("height")
             # fps as fraction e.g. "30000/1001"
             fps_str = stream.get("r_frame_rate", "")
@@ -231,13 +248,20 @@ def probe_image(image: Path) -> Tuple[Optional[int], Optional[int]]:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=width,height",
-                "-of", "csv=p=0",
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=p=0",
                 str(image),
             ],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         parts = result.stdout.strip().split(",")
         if len(parts) == 2:
@@ -251,18 +275,19 @@ def probe_image(image: Path) -> Tuple[Optional[int], Optional[int]]:
 # COLMAP binary helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def count_registered_images(model_dir: Path) -> Optional[int]:
     """
     Count how many images were registered in a COLMAP sparse model.
     Reads images.bin (binary) or images.txt (text), whichever exists.
     """
-    bin_file  = model_dir / "images.bin"
-    txt_file  = model_dir / "images.txt"
+    bin_file = model_dir / "images.bin"
+    txt_file = model_dir / "images.txt"
 
     if bin_file.exists():
         try:
             with open(bin_file, "rb") as f:
-                count, = struct.unpack("<Q", f.read(8))
+                (count,) = struct.unpack("<Q", f.read(8))
             return count
         except Exception:
             pass
@@ -270,7 +295,8 @@ def count_registered_images(model_dir: Path) -> Optional[int]:
     if txt_file.exists():
         try:
             lines = [
-                l for l in txt_file.read_text().splitlines()
+                l
+                for l in txt_file.read_text().splitlines()
                 if l.strip() and not l.startswith("#")
             ]
             # images.txt has 2 lines per image (header + points)
@@ -308,8 +334,9 @@ def check_tool(name: str, install_hint: str = "") -> bool:
 
 
 def format_duration(seconds: float) -> str:
+    """Format elapsed seconds as a compact human-readable duration string."""
     h, rem = divmod(int(seconds), 3600)
-    m, s   = divmod(rem, 60)
+    m, s = divmod(rem, 60)
     if h:
         return f"{h}h {m}m {s}s"
     if m:

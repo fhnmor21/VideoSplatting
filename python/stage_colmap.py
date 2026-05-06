@@ -23,14 +23,23 @@ from typing import List, Optional
 
 from config.settings import PipelineConfig
 from pipeline.utils import (
-    CommandError, check_tool, count_registered_images,
-    log_header, log_info, log_success, log_warn,
-    probe_image, run,
+    CommandError,
+    check_tool,
+    count_registered_images,
+    log_header,
+    log_info,
+    log_success,
+    log_warn,
+    probe_image,
+    run,
 )
 
 
 class ColmapReconstructor:
+    """Run COLMAP feature extraction, matching, mapping, and undistortion."""
+
     def __init__(self, config: PipelineConfig) -> None:
+        """Store shared pipeline configuration for COLMAP processing."""
         self.cfg = config
 
     # ------------------------------------------------------------------ #
@@ -38,6 +47,7 @@ class ColmapReconstructor:
     # ------------------------------------------------------------------ #
 
     def run(self) -> bool:
+        """Execute the full COLMAP reconstruction pipeline for extracted frames."""
         log_header("Stage 2 — COLMAP Sparse Reconstruction")
 
         if not check_tool("colmap", "Install: https://colmap.github.io/install.html"):
@@ -61,15 +71,19 @@ class ColmapReconstructor:
         if img_w and img_h:
             cam_params = self.cfg.opencv_camera_params(img_w, img_h)
             focal = self.cfg.focal_px or self.cfg.estimate_focal_px(img_w)
-            log_info(f"Focal prior  : {focal:.0f} px  (auto-estimated from Pixel geometry)")
+            log_info(
+                f"Focal prior  : {focal:.0f} px  (auto-estimated from Pixel geometry)"
+            )
             log_info(f"Camera params: {cam_params}")
         else:
-            log_warn("Could not determine image dimensions — COLMAP will estimate focal length.")
+            log_warn(
+                "Could not determine image dimensions — COLMAP will estimate focal length."
+            )
 
         # Run sub-stages
         t0 = time.time()
 
-        db   = self.cfg.colmap_database
+        db = self.cfg.colmap_database
         imgs = self.cfg.frames_dir
 
         if not self._feature_extract(db, imgs, cam_params):
@@ -77,7 +91,7 @@ class ColmapReconstructor:
         if not self._sequential_match(db):
             return False
         if self.cfg.vocab_tree:
-            self._vocab_tree_match(db)   # optional; failure is non-fatal
+            self._vocab_tree_match(db)  # optional; failure is non-fatal
         if not self._mapper(db, imgs):
             return False
 
@@ -88,8 +102,7 @@ class ColmapReconstructor:
 
         n_reg = count_registered_images(best)
         log_success(
-            f"Sparse model : {best}  "
-            f"({n_reg}/{len(frame_files)} images registered)"
+            f"Sparse model : {best}  ({n_reg}/{len(frame_files)} images registered)"
         )
 
         if n_reg is not None and n_reg < len(frame_files) * 0.8:
@@ -113,6 +126,7 @@ class ColmapReconstructor:
     # ------------------------------------------------------------------ #
 
     def _feature_extract(self, db: Path, imgs: Path, cam_params: str) -> bool:
+        """Extract SIFT features into COLMAP database using camera priors."""
         log_info("2a — Feature extraction (SIFT)…")
 
         # Resume: skip if database already has features
@@ -121,23 +135,34 @@ class ColmapReconstructor:
             return True
 
         cmd: List = [
-            "colmap", "feature_extractor",
-            "--database_path", db,
-            "--image_path",    imgs,
-
+            "colmap",
+            "feature_extractor",
+            "--database_path",
+            db,
+            "--image_path",
+            imgs,
             # Camera model
-            "--ImageReader.camera_model",  self.cfg.camera_model,
-            "--ImageReader.single_camera", "1",  # all frames = same phone/lens
-
+            "--ImageReader.camera_model",
+            self.cfg.camera_model,
+            "--ImageReader.single_camera",
+            "1",  # all frames = same phone/lens
             # SIFT — tuned for dark, low-texture interiors
-            "--SiftExtraction.use_gpu",             "1",
-            "--SiftExtraction.gpu_index",            str(self.cfg.colmap_gpu),
-            "--SiftExtraction.num_threads",          str(self.cfg.cpu_threads),
-            "--SiftExtraction.max_num_features",    "8192",
-            "--SiftExtraction.first_octave",        "-1",    # finer scale detection
-            "--SiftExtraction.peak_threshold",      "0.003", # more kps on low-contrast walls
-            "--SiftExtraction.edge_threshold",      "10",
-            "--SiftExtraction.domain_size_pooling", "1",     # better descriptors on flat surfaces
+            "--SiftExtraction.use_gpu",
+            "1",
+            "--SiftExtraction.gpu_index",
+            str(self.cfg.colmap_gpu),
+            "--SiftExtraction.num_threads",
+            str(self.cfg.cpu_threads),
+            "--SiftExtraction.max_num_features",
+            "8192",
+            "--SiftExtraction.first_octave",
+            "-1",  # finer scale detection
+            "--SiftExtraction.peak_threshold",
+            "0.003",  # more kps on low-contrast walls
+            "--SiftExtraction.edge_threshold",
+            "10",
+            "--SiftExtraction.domain_size_pooling",
+            "1",  # better descriptors on flat surfaces
         ]
 
         if cam_params:
@@ -157,28 +182,38 @@ class ColmapReconstructor:
     # ------------------------------------------------------------------ #
 
     def _sequential_match(self, db: Path) -> bool:
+        """Match features across neighboring frames in capture order."""
         log_info("2b — Sequential matching (video order)…")
 
         cmd: List = [
-            "colmap", "sequential_matcher",
-            "--database_path", db,
-
-            "--SiftMatching.use_gpu",      "1",
-            "--SiftMatching.gpu_index",     str(self.cfg.colmap_gpu),
-            "--SiftMatching.num_threads",   str(self.cfg.cpu_threads),
-            "--SiftMatching.max_ratio",    "0.80",   # Lowe ratio test
-            "--SiftMatching.max_distance", "0.7",
-            "--SiftMatching.cross_check",  "1",
-
+            "colmap",
+            "sequential_matcher",
+            "--database_path",
+            db,
+            "--SiftMatching.use_gpu",
+            "1",
+            "--SiftMatching.gpu_index",
+            str(self.cfg.colmap_gpu),
+            "--SiftMatching.num_threads",
+            str(self.cfg.cpu_threads),
+            "--SiftMatching.max_ratio",
+            "0.80",  # Lowe ratio test
+            "--SiftMatching.max_distance",
+            "0.7",
+            "--SiftMatching.cross_check",
+            "1",
             # Geometric verification — require solid overlap
-            "--TwoViewGeometry.min_num_inliers", "15",
-
+            "--TwoViewGeometry.min_num_inliers",
+            "15",
             # Sequential window — match each frame against 20 neighbours each side;
             # quadratic_overlap also matches at 2×, 4×, 8× steps to bridge gaps
             # that extract_frames.sh may have created.
-            "--SequentialMatching.overlap",           "20",
-            "--SequentialMatching.quadratic_overlap",  "1",
-            "--SequentialMatching.loop_detection",     "0",  # handled separately below
+            "--SequentialMatching.overlap",
+            "20",
+            "--SequentialMatching.quadratic_overlap",
+            "1",
+            "--SequentialMatching.loop_detection",
+            "0",  # handled separately below
         ]
 
         try:
@@ -195,23 +230,30 @@ class ColmapReconstructor:
     # ------------------------------------------------------------------ #
 
     def _vocab_tree_match(self, db: Path) -> bool:
+        """Run optional loop-closure matching using a vocab tree index."""
         vt = self.cfg.vocab_tree
         if vt is None or not vt.exists():
-            return True   # nothing to do
+            return True  # nothing to do
 
         log_info(f"2c — Vocab tree matching (loop closure)  [{vt.name}]…")
 
         cmd: List = [
-            "colmap", "vocab_tree_matcher",
-            "--database_path", db,
-
-            "--SiftMatching.use_gpu",     "1",
-            "--SiftMatching.gpu_index",    str(self.cfg.colmap_gpu),
-            "--SiftMatching.num_threads",  str(self.cfg.cpu_threads),
-            "--SiftMatching.max_ratio",   "0.80",
-
-            "--VocabTreeMatching.vocab_tree_path",  str(vt),
-            "--VocabTreeMatching.num_images",       "50",
+            "colmap",
+            "vocab_tree_matcher",
+            "--database_path",
+            db,
+            "--SiftMatching.use_gpu",
+            "1",
+            "--SiftMatching.gpu_index",
+            str(self.cfg.colmap_gpu),
+            "--SiftMatching.num_threads",
+            str(self.cfg.cpu_threads),
+            "--SiftMatching.max_ratio",
+            "0.80",
+            "--VocabTreeMatching.vocab_tree_path",
+            str(vt),
+            "--VocabTreeMatching.num_images",
+            "50",
         ]
 
         try:
@@ -227,6 +269,7 @@ class ColmapReconstructor:
     # ------------------------------------------------------------------ #
 
     def _mapper(self, db: Path, imgs: Path) -> bool:
+        """Build one or more sparse SfM models from matches and camera priors."""
         log_info("2d — Incremental mapper (SfM)…")
         log_info("     This is the longest COLMAP step — progress logged below.")
 
@@ -238,30 +281,40 @@ class ColmapReconstructor:
             return True
 
         cmd: List = [
-            "colmap", "mapper",
-            "--database_path", db,
-            "--image_path",    imgs,
-            "--output_path",   sparse_out,
-
+            "colmap",
+            "mapper",
+            "--database_path",
+            db,
+            "--image_path",
+            imgs,
+            "--output_path",
+            sparse_out,
             # Initialisation — require a solid seed pair (avoids planar-wall init)
-            "--Mapper.init_min_num_inliers",      "100",
-            "--Mapper.init_max_forward_motion",   "0.95",
-
+            "--Mapper.init_min_num_inliers",
+            "100",
+            "--Mapper.init_max_forward_motion",
+            "0.95",
             # Registration — looser thresholds for interior (short baseline)
-            "--Mapper.abs_pose_min_num_inliers",   "30",
-            "--Mapper.abs_pose_min_inlier_ratio",  "0.25",
-
+            "--Mapper.abs_pose_min_num_inliers",
+            "30",
+            "--Mapper.abs_pose_min_inlier_ratio",
+            "0.25",
             # Bundle adjustment
-            "--Mapper.ba_local_num_images",        "6",
-            "--Mapper.ba_global_images_ratio",     "1.1",
-            "--Mapper.ba_global_points_ratio",     "1.1",
-
+            "--Mapper.ba_local_num_images",
+            "6",
+            "--Mapper.ba_global_images_ratio",
+            "1.1",
+            "--Mapper.ba_global_points_ratio",
+            "1.1",
             # Accept wide-angle focal priors (Pixel main cam sits outside default range)
-            "--Mapper.min_focal_length_ratio",     "0.1",
-            "--Mapper.max_focal_length_ratio",    "10.0",
-            "--Mapper.max_extra_param",            "1.0",
-
-            "--Mapper.num_threads", str(self.cfg.cpu_threads),
+            "--Mapper.min_focal_length_ratio",
+            "0.1",
+            "--Mapper.max_focal_length_ratio",
+            "10.0",
+            "--Mapper.max_extra_param",
+            "1.0",
+            "--Mapper.num_threads",
+            str(self.cfg.cpu_threads),
         ]
 
         try:
@@ -277,21 +330,26 @@ class ColmapReconstructor:
     # ------------------------------------------------------------------ #
 
     def _export_txt(self, model: Path) -> bool:
+        """Export a sparse model to human-readable COLMAP TXT format."""
         log_info("2e — Exporting text model…")
         txt_dir = model / "txt"
         txt_dir.mkdir(exist_ok=True)
 
         cmd: List = [
-            "colmap", "model_converter",
-            "--input_path",  model,
-            "--output_path", txt_dir,
-            "--output_type", "TXT",
+            "colmap",
+            "model_converter",
+            "--input_path",
+            model,
+            "--output_path",
+            txt_dir,
+            "--output_type",
+            "TXT",
         ]
         try:
             run(cmd, dry_run=self.cfg.dry_run)
         except CommandError as e:
             log_warn(f"model_converter failed (non-fatal): {e}")
-            return True   # not critical for 3DGS
+            return True  # not critical for 3DGS
 
         log_success(f"Text model  → {txt_dir}")
         return True
@@ -301,24 +359,31 @@ class ColmapReconstructor:
     # ------------------------------------------------------------------ #
 
     def _undistort(self, model: Path, imgs: Path) -> bool:
+        """Undistort source images to produce dense input for 3DGS training."""
         log_info("2f — Image undistortion…")
 
         dense_out = self.cfg.colmap_dense
 
         # Resume: skip if undistorted images already exist
         if self.cfg.resume and (dense_out / "images").exists():
-            undist_imgs = list((dense_out / "images").glob("*.jpg")) + \
-                          list((dense_out / "images").glob("*.png"))
+            undist_imgs = list((dense_out / "images").glob("*.jpg")) + list(
+                (dense_out / "images").glob("*.png")
+            )
             if undist_imgs:
                 log_info("Resume: undistorted images exist — skipping undistortion.")
                 return True
 
         cmd: List = [
-            "colmap", "image_undistorter",
-            "--image_path",   imgs,
-            "--input_path",   model,
-            "--output_path",  dense_out,
-            "--output_type",  "COLMAP",   # produces sparse/ + images/ for 3DGS
+            "colmap",
+            "image_undistorter",
+            "--image_path",
+            imgs,
+            "--input_path",
+            model,
+            "--output_path",
+            dense_out,
+            "--output_type",
+            "COLMAP",  # produces sparse/ + images/ for 3DGS
         ]
         try:
             run(cmd, dry_run=self.cfg.dry_run)

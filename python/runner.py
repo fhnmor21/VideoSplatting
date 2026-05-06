@@ -21,13 +21,19 @@ from pipeline.stage_extract import FrameExtractor
 from pipeline.stage_colmap import ColmapReconstructor
 from pipeline.stage_gaussian import GaussianTrainer
 from pipeline.utils import (
-    format_duration, log_error, log_header, log_info,
-    log_success, log_warn,
+    format_duration,
+    log_error,
+    log_header,
+    log_info,
+    log_success,
+    log_warn,
 )
 
 
 @dataclass
 class StageResult:
+    """Store execution status and timing information for one pipeline stage."""
+
     name: str
     success: bool
     skipped: bool = False
@@ -36,7 +42,10 @@ class StageResult:
 
 
 class PipelineRunner:
+    """Run pre-flight checks and execute enabled pipeline stages in order."""
+
     def __init__(self, config: PipelineConfig) -> None:
+        """Initialize the runner with shared pipeline configuration."""
         self.cfg = config
         self.results: List[StageResult] = []
 
@@ -45,6 +54,7 @@ class PipelineRunner:
     # ------------------------------------------------------------------ #
 
     def run(self) -> bool:
+        """Execute configured stages sequentially and stop on first failure."""
         self._print_banner()
 
         if not self._preflight():
@@ -53,9 +63,9 @@ class PipelineRunner:
         self.cfg.ensure_dirs()
 
         stages = [
-            ("Frame Extraction",          self.cfg.run_extract,  self._run_extract),
-            ("COLMAP Reconstruction",     self.cfg.run_colmap,   self._run_colmap),
-            ("Gaussian Splatting",        self.cfg.run_training, self._run_gaussian),
+            ("Frame Extraction", self.cfg.run_extract, self._run_extract),
+            ("COLMAP Reconstruction", self.cfg.run_colmap, self._run_colmap),
+            ("Gaussian Splatting", self.cfg.run_training, self._run_gaussian),
         ]
 
         pipeline_ok = True
@@ -73,11 +83,13 @@ class PipelineRunner:
                 log_error(f"Unexpected error in '{name}': {exc}")
 
             elapsed = time.time() - t0
-            self.results.append(StageResult(
-                name=name,
-                success=ok,
-                elapsed=elapsed,
-            ))
+            self.results.append(
+                StageResult(
+                    name=name,
+                    success=ok,
+                    elapsed=elapsed,
+                )
+            )
 
             if not ok:
                 log_error(f"Stage '{name}' failed — aborting pipeline.")
@@ -92,12 +104,15 @@ class PipelineRunner:
     # ------------------------------------------------------------------ #
 
     def _run_extract(self) -> bool:
+        """Run the frame extraction stage."""
         return FrameExtractor(self.cfg).run()
 
     def _run_colmap(self) -> bool:
+        """Run the COLMAP reconstruction stage."""
         return ColmapReconstructor(self.cfg).run()
 
     def _run_gaussian(self) -> bool:
+        """Run the Gaussian Splatting training stage."""
         return GaussianTrainer(self.cfg).run()
 
     # ------------------------------------------------------------------ #
@@ -105,13 +120,16 @@ class PipelineRunner:
     # ------------------------------------------------------------------ #
 
     def _preflight(self) -> bool:
+        """Validate required tools and paths before running any stage."""
         log_header("Pre-flight Checks")
         ok = True
 
         # Required tools
-        tools = {"ffmpeg": "https://ffmpeg.org/download.html",
-                 "ffprobe": "https://ffmpeg.org/download.html",
-                 "colmap": "https://colmap.github.io/install.html"}
+        tools = {
+            "ffmpeg": "https://ffmpeg.org/download.html",
+            "ffprobe": "https://ffmpeg.org/download.html",
+            "colmap": "https://colmap.github.io/install.html",
+        }
 
         for tool, hint in tools.items():
             if shutil.which(tool):
@@ -163,13 +181,19 @@ class PipelineRunner:
     # ------------------------------------------------------------------ #
 
     def _detect_gpu(self) -> Optional[str]:
+        """Return NVIDIA GPU name and memory if available, otherwise None."""
         if not shutil.which("nvidia-smi"):
             return None
         try:
             result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total",
-                 "--format=csv,noheader"],
-                capture_output=True, text=True, timeout=10,
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.total",
+                    "--format=csv,noheader",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
             return lines[0] if lines else None
@@ -177,6 +201,7 @@ class PipelineRunner:
             return None
 
     def _print_banner(self) -> None:
+        """Print a startup banner with key runtime configuration values."""
         cfg = self.cfg
         print()
         print("╔══════════════════════════════════════════════════════════╗")
@@ -193,14 +218,19 @@ class PipelineRunner:
         print(f"  Dry run      : {cfg.dry_run}")
         print(f"  Resume       : {cfg.resume}")
         enabled = []
-        if cfg.run_extract:  enabled.append("extract")
-        if cfg.run_colmap:   enabled.append("colmap")
-        if cfg.run_training: enabled.append("train")
-        if cfg.run_render:   enabled.append("render")
+        if cfg.run_extract:
+            enabled.append("extract")
+        if cfg.run_colmap:
+            enabled.append("colmap")
+        if cfg.run_training:
+            enabled.append("train")
+        if cfg.run_render:
+            enabled.append("render")
         print(f"  Stages       : {', '.join(enabled)}")
         print()
 
     def _print_stage_summary(self) -> None:
+        """Print a compact table summarizing stage outcomes and durations."""
         print()
         print("┌─────────────────────────────────────────────────────────┐")
         print("│  Stage Summary                                          │")

@@ -15,6 +15,8 @@ from typing import Optional
 
 @dataclass
 class PipelineConfig:
+    """Central configuration object shared by all pipeline stages."""
+
     # ------------------------------------------------------------------ #
     # Top-level
     # ------------------------------------------------------------------ #
@@ -39,7 +41,7 @@ class PipelineConfig:
     scene_threshold: float = 0.35
     min_gap: float = 0.5
     max_gap: float = 3.0
-    frame_quality: int = 2          # ffmpeg JPEG qscale (1 = best)
+    frame_quality: int = 2  # ffmpeg JPEG qscale (1 = best)
 
     # ------------------------------------------------------------------ #
     # COLMAP
@@ -71,18 +73,22 @@ class PipelineConfig:
     # ------------------------------------------------------------------ #
     @property
     def frames_dir(self) -> Path:
+        """Return the directory where extracted frames are written."""
         return self.output_root / "frames"
 
     @property
     def colmap_workspace(self) -> Path:
+        """Return the root COLMAP workspace directory."""
         return self.output_root / "colmap"
 
     @property
     def colmap_database(self) -> Path:
+        """Return the COLMAP SQLite database path."""
         return self.colmap_workspace / "database.db"
 
     @property
     def colmap_sparse(self) -> Path:
+        """Return the directory that stores sparse COLMAP models."""
         return self.colmap_workspace / "sparse"
 
     @property
@@ -92,6 +98,7 @@ class PipelineConfig:
 
     @property
     def gs_output(self) -> Path:
+        """Return the output directory for Gaussian Splatting artifacts."""
         return self.output_root / "gaussian"
 
     @property
@@ -104,15 +111,19 @@ class PipelineConfig:
         sub_models = [d for d in sub_models if d.is_dir()]
         if not sub_models:
             return None
+
         # The mapper names them 0, 1, 2 … in registration order; 0 is usually largest.
         # To be safe, pick the one whose images.bin is biggest.
         def model_size(d: Path) -> int:
+            """Return byte size of images.bin for sparse model ranking."""
             ib = d / "images.bin"
             return ib.stat().st_size if ib.exists() else 0
+
         return max(sub_models, key=model_size)
 
     @property
     def cpu_threads(self) -> int:
+        """Return configured COLMAP thread count or an OS-derived default."""
         if self.colmap_threads is not None:
             return self.colmap_threads
         return os.cpu_count() or 4
@@ -144,19 +155,28 @@ class PipelineConfig:
     # ------------------------------------------------------------------ #
     @property
     def train_script(self) -> Path:
+        """Return the path to the upstream gaussian-splatting train script."""
         return self.gs_repo / "train.py"
 
     @property
     def render_script(self) -> Path:
+        """Return the path to the upstream gaussian-splatting render script."""
         return self.gs_repo / "render.py"
 
     @property
     def metrics_script(self) -> Path:
+        """Return the path to the upstream gaussian-splatting metrics script."""
         return self.gs_repo / "metrics.py"
 
     @property
     def final_ply(self) -> Path:
-        return self.gs_output / "point_cloud" / f"iteration_{self.iterations}" / "point_cloud.ply"
+        """Return the expected path to the final trained point cloud PLY."""
+        return (
+            self.gs_output
+            / "point_cloud"
+            / f"iteration_{self.iterations}"
+            / "point_cloud.ply"
+        )
 
     def ensure_dirs(self) -> None:
         """Create all output directories that must exist before the pipeline starts."""
