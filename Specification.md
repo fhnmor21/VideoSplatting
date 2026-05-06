@@ -92,6 +92,14 @@ Behavioral details:
 - Supports resume behavior for features, sparse model, and undistorted image outputs
 - Validates reconstruction quality by reporting registered image count
 
+Mapper selection note (based on COLMAP CLI documentation):
+
+- This pipeline currently uses incremental `colmap mapper` (not `global_mapper`).
+- `global_mapper` can be faster on large datasets, but COLMAP documents that it may be less robust to outliers.
+- `global_mapper` depends on good focal-length priors; COLMAP recommends running `view_graph_calibrator` first when intrinsics are uncertain.
+- For this project's interior walkthrough use case (low texture, variable lighting, sequential capture), keeping incremental mapping as the default is expected to be more stable.
+- If future datasets show heavy drift/fragmentation at larger scale, evaluate an optional global-SfM path using a copied database plus `view_graph_calibrator` before `global_mapper`.
+
 ### Stage 3: Gaussian Splatting Training
 
 - **File:** `python/stage_gaussian.py`
