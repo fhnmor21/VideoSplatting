@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from config.settings import PipelineConfig
+from pipeline.gaussian_backends import backend_for
 from pipeline.utils import (
     CommandError,
     count_ply_points,
@@ -35,6 +36,7 @@ from pipeline.utils import (
     log_warn,
     run,
     run_in_conda,
+    run_in_uv,
 )
 
 
@@ -44,6 +46,7 @@ class GaussianTrainer:
     def __init__(self, config: PipelineConfig) -> None:
         """Store shared pipeline configuration and deferred conda metadata."""
         self.cfg = config
+        self.backend = backend_for(config)
         self._conda_sh: Optional[Path] = None
 
     # ------------------------------------------------------------------ #
@@ -54,18 +57,19 @@ class GaussianTrainer:
         """Validate prerequisites, run training, and optionally run evaluation."""
         log_header("Stage 3 — 3D Gaussian Splatting Training")
 
-        # Locate the repo and conda env
-        if not self._validate_repo():
+        # Validate backend and repo
+        if not self.backend.validate():
             return False
 
-        self._conda_sh = find_conda_sh()
-        if self._conda_sh is None and not self.cfg.dry_run:
-            log_warn(
-                "Could not locate conda.sh — cannot activate the GS conda env.\n"
-                "  Install Miniconda: https://docs.conda.io/en/latest/miniconda.html\n"
-                "  Or ensure 'conda' is in PATH."
-            )
-            return False
+        if self.cfg.env_runner == "conda":
+            self._conda_sh = find_conda_sh()
+            if self._conda_sh is None and not self.cfg.dry_run:
+                log_warn(
+                    "Could not locate conda.sh — cannot activate the GS conda env.\n"
+                    "  Install Miniconda: https://docs.conda.io/en/latest/miniconda.html\n"
+                    "  Or ensure 'conda' is in PATH."
+                )
+                return False
 
         # Validate source path structure
         source = self.cfg.colmap_dense
@@ -82,7 +86,11 @@ class GaussianTrainer:
         log_info(f"Source path  : {source}  ({image_count} undistorted images)")
         log_info(f"Output path  : {self.cfg.gs_output}")
         log_info(f"GS repo      : {self.cfg.gs_repo}")
-        log_info(f"Conda env    : {self.cfg.conda_env}")
+        log_info(f"Backend      : {self.backend.name}")
+        if self.cfg.env_runner == "conda":
+            log_info(f"Conda env    : {self.backend.env_name}")
+        else:
+            log_info(f"UV python    : {self.cfg.uv_python}")
         log_info(f"Iterations   : {self.cfg.iterations}")
         log_info(f"Densification: {self.cfg.densify_start} → {self.cfg.densify_end}")
         log_info(f"Resolution cap: {self.cfg.resolution_cap}px")
@@ -103,30 +111,6 @@ class GaussianTrainer:
         return True
 
     # ------------------------------------------------------------------ #
-    # Validation
-    # ------------------------------------------------------------------ #
-
-    def _validate_repo(self) -> bool:
-        """Verify that gaussian-splatting repository and scripts are available."""
-        if not self.cfg.gs_repo.exists():
-            log_warn(
-                f"Gaussian Splatting repo not found: {self.cfg.gs_repo}\n\n"
-                "  Install it with:\n"
-                "    git clone --recursive "
-                "https://github.com/graphdeco-inria/gaussian-splatting\n"
-                "    cd gaussian-splatting\n"
-                "    conda env create -f environment.yml\n"
-                "    conda activate gaussian_splatting\n"
-            )
-            return False
-
-        if not self.cfg.train_script.exists():
-            log_warn(f"train.py not found in repo: {self.cfg.gs_repo}")
-            return False
-
-        return True
-
-    # ------------------------------------------------------------------ #
     # Training
     # ------------------------------------------------------------------ #
 
@@ -135,14 +119,21 @@ class GaussianTrainer:
         log_info("Training 3DGS model…  (this takes 20–90 min depending on GPU)")
         log_info(f"Monitor training at: http://127.0.0.1:{self.cfg.viewer_port}")
 
-        cmd = self._build_train_cmd()
+        cmd = self.backend.build_train_cmd()
 
         t0 = time.time()
         try:
-            if self._conda_sh:
+            if self.cfg.env_runner == "conda" and self._conda_sh:
                 run_in_conda(
                     self._conda_sh,
-                    self.cfg.conda_env,
+                    self.backend.env_name,
+                    cmd,
+                    dry_run=self.cfg.dry_run,
+                    cwd=self.cfg.gs_repo,
+                )
+            elif self.cfg.env_runner == "uv":
+                run_in_uv(
+                    self.cfg.uv_python,
                     cmd,
                     dry_run=self.cfg.dry_run,
                     cwd=self.cfg.gs_repo,
@@ -158,75 +149,6 @@ class GaussianTrainer:
         log_success(f"Training complete in {format_duration(elapsed)}")
         return True
 
-    def _build_train_cmd(self) -> List:
-        """Build train.py CLI arguments from pipeline configuration values."""
-        cfg = self.cfg
-
-        cmd: List = [
-            "python",
-            str(cfg.train_script),
-            # I/O
-            "--source_path",
-            str(cfg.colmap_dense),
-            "--model_path",
-            str(cfg.gs_output),
-            # Iterations
-            "--iterations",
-            str(cfg.iterations),
-            # Densification — stop at half-way for interiors (avoids wall over-splat)
-            "--densify_from_iter",
-            str(cfg.densify_start),
-            "--densify_until_iter",
-            str(cfg.densify_end),
-            "--densify_grad_threshold",
-            str(cfg.densify_grad_threshold),
-            # Opacity reset — prunes floaters near walls/ceilings
-            "--opacity_reset_interval",
-            "3000",
-            # Resolution — let 3DGS decide, but cap to guard VRAM
-            "--resolution",
-            "-1",
-            "--resolution_scale",
-            "1.0",
-            # Image resolution cap (Pixel 4K → 3840px without this uses ~16GB)
-            "--images",
-            str(cfg.colmap_dense / "images"),
-            # Evaluation split
-            "--eval",
-            "--llffhold",
-            str(cfg.test_holdout),
-            # Viewer
-            "--ip",
-            "127.0.0.1",
-            "--port",
-            str(cfg.viewer_port),
-        ]
-
-        # Checkpointing
-        save_iters: List[str] = []
-        ckpt_iters: List[str] = []
-        if cfg.checkpoint_interval > 0:
-            # Save at each interval and at the final iteration
-            intervals = list(
-                range(
-                    cfg.checkpoint_interval,
-                    cfg.iterations,
-                    cfg.checkpoint_interval,
-                )
-            )
-            if cfg.iterations not in intervals:
-                intervals.append(cfg.iterations)
-            save_iters = [str(i) for i in intervals]
-            ckpt_iters = save_iters[:]
-        else:
-            save_iters = [str(cfg.iterations)]
-
-        cmd += ["--save_iterations"] + save_iters
-        if ckpt_iters:
-            cmd += ["--checkpoint_iterations"] + ckpt_iters
-
-        return cmd
-
     # ------------------------------------------------------------------ #
     # Render + metrics
     # ------------------------------------------------------------------ #
@@ -238,23 +160,20 @@ class GaussianTrainer:
             return
 
         log_info("Rendering held-out test views…")
-        cmd: List = [
-            "python",
-            str(self.cfg.render_script),
-            "--model_path",
-            str(self.cfg.gs_output),
-            "--source_path",
-            str(self.cfg.colmap_dense),
-            "--iteration",
-            str(self.cfg.iterations),
-            "--skip_train",
-        ]
+        cmd = self.backend.build_render_cmd()
 
         try:
-            if self._conda_sh:
+            if self.cfg.env_runner == "conda" and self._conda_sh:
                 run_in_conda(
                     self._conda_sh,
-                    self.cfg.conda_env,
+                    self.backend.env_name,
+                    cmd,
+                    dry_run=self.cfg.dry_run,
+                    cwd=self.cfg.gs_repo,
+                )
+            elif self.cfg.env_runner == "uv":
+                run_in_uv(
+                    self.cfg.uv_python,
                     cmd,
                     dry_run=self.cfg.dry_run,
                     cwd=self.cfg.gs_repo,
@@ -272,20 +191,20 @@ class GaussianTrainer:
             return
 
         log_info("Computing PSNR / SSIM / LPIPS on test split…")
-        cmd: List = [
-            "python",
-            str(self.cfg.metrics_script),
-            "--model_path",
-            str(self.cfg.gs_output),
-            "--iteration",
-            str(self.cfg.iterations),
-        ]
+        cmd = self.backend.build_metrics_cmd()
 
         try:
-            if self._conda_sh:
+            if self.cfg.env_runner == "conda" and self._conda_sh:
                 run_in_conda(
                     self._conda_sh,
-                    self.cfg.conda_env,
+                    self.backend.env_name,
+                    cmd,
+                    dry_run=self.cfg.dry_run,
+                    cwd=self.cfg.gs_repo,
+                )
+            elif self.cfg.env_runner == "uv":
+                run_in_uv(
+                    self.cfg.uv_python,
                     cmd,
                     dry_run=self.cfg.dry_run,
                     cwd=self.cfg.gs_repo,

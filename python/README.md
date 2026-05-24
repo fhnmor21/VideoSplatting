@@ -27,7 +27,8 @@ gaussian/point_cloud/iteration_30000/point_cloud.ply
 |------|---------|---------|
 | ffmpeg + ffprobe | ≥ 5.0 | https://ffmpeg.org/download.html |
 | COLMAP | ≥ 3.8 | https://colmap.github.io/install.html |
-| CUDA GPU | any | Required for 3DGS training |
+| CUDA GPU | any | Required for default `--gs-backend cuda` |
+| ROCm GPU stack | any | Required for `--gs-backend rocm` |
 | Miniconda | any | https://docs.conda.io/en/latest/miniconda.html |
 
 ### gaussian-splatting repo
@@ -39,6 +40,20 @@ conda activate gaussian_splatting
 # Verify CUDA extensions compiled:
 python -c "from diff_gaussian_rasterization import GaussianRasterizationSettings; print('OK')"
 ```
+
+### ROCm backend notes
+
+- Use `--gs-backend rocm` to switch Stage 3 backend selection.
+- You can execute GS scripts with either `conda` (default) or `uv` runner:
+  - `--env-runner conda --rocm-env <env_name>`
+  - `--env-runner uv --uv-python /path/to/python`
+- Verify ROCm PyTorch in your environment:
+
+```bash
+python -c "import torch; print(torch.version.hip)"
+```
+
+- Non-goal: this pipeline does not implement a remote CUDA backend.
 
 ### Vocab tree (optional — improves loop closure in revisited rooms)
 ```bash
@@ -60,6 +75,15 @@ python main.py building.mp4
 
 # Specify the repo location
 python main.py building.mp4 -o ./output --gs-repo ~/gaussian-splatting
+
+# CUDA backend (default) via conda
+python main.py building.mp4 --gs-backend cuda --env-runner conda --conda-env gaussian_splatting
+
+# ROCm backend via conda
+python main.py building.mp4 --gs-backend rocm --env-runner conda --rocm-env gaussian_splatting_rocm
+
+# ROCm backend via uv (explicit interpreter)
+python main.py building.mp4 --gs-backend rocm --env-runner uv --uv-python /opt/venvs/gs-rocm/bin/python
 
 # With vocab tree for better loop closure
 python main.py building.mp4 --vocab-tree vocab_tree_flickr100K_words256K.bin

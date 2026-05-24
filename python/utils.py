@@ -157,6 +157,26 @@ def run_in_conda(
     )
 
 
+def run_in_uv(
+    python_bin: str,
+    args: Sequence,
+    *,
+    dry_run: bool = False,
+    cwd: Optional[Path] = None,
+) -> subprocess.CompletedProcess:
+    """Run a command via an explicit Python interpreter path."""
+    if not python_bin:
+        raise CommandError("uv runner requires a non-empty Python interpreter path")
+
+    str_args = [str(a) for a in args]
+    if str_args and str_args[0] == "python":
+        str_args[0] = str(python_bin)
+    else:
+        str_args = [str(python_bin)] + str_args
+
+    return run(str_args, dry_run=dry_run, cwd=cwd)
+
+
 def find_conda_sh() -> Optional[Path]:
     """Locate the conda.sh init script across common installation prefixes."""
     candidates = [

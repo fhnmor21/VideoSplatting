@@ -143,10 +143,16 @@ class PipelineRunner:
         if gpu_info:
             log_success(f"GPU: {gpu_info}")
         else:
-            log_warn(
-                "No NVIDIA GPU detected. COLMAP and 3DGS training both require CUDA.\n"
-                "  COLMAP can run on CPU (slow) but 3DGS cannot."
-            )
+            if self.cfg.gs_backend == "rocm":
+                log_warn(
+                    "No NVIDIA GPU detected. ROCm backend selected; ensure ROCm is installed.\n"
+                    "  Verify with: python -c \"import torch; print(torch.version.hip)\""
+                )
+            else:
+                log_warn(
+                    "No NVIDIA GPU detected. COLMAP and CUDA 3DGS usually need NVIDIA.\n"
+                    "  COLMAP can run on CPU (slow)."
+                )
 
         # GS repo check
         if self.cfg.run_training:
@@ -212,7 +218,12 @@ class PipelineRunner:
         print(f"  Video        : {cfg.video}")
         print(f"  Output root  : {cfg.output_root}")
         print(f"  GS repo      : {cfg.gs_repo}")
-        print(f"  Conda env    : {cfg.conda_env}")
+        print(f"  GS backend   : {cfg.gs_backend}")
+        print(f"  Env runner   : {cfg.env_runner}")
+        if cfg.env_runner == "conda":
+            print(f"  Conda env    : {cfg.active_gs_env}")
+        else:
+            print(f"  UV python    : {cfg.uv_python}")
         print(f"  Iterations   : {cfg.iterations}")
         print(f"  Resolution   : cap {cfg.resolution_cap}px")
         print(f"  Dry run      : {cfg.dry_run}")

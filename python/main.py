@@ -53,6 +53,17 @@ def parse_args() -> argparse.Namespace:
         help="Conda environment name that has the GS dependencies installed",
     )
     p.add_argument(
+        "--env-runner",
+        default="conda",
+        choices=["conda", "uv"],
+        help="Environment runner used for gaussian-splatting commands",
+    )
+    p.add_argument(
+        "--uv-python",
+        default="",
+        help="Path to Python interpreter when --env-runner uv",
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         help="Print every command without executing anything",
@@ -158,6 +169,17 @@ def parse_args() -> argparse.Namespace:
     # ------------------------------------------------------------------ #
     gs = p.add_argument_group("Gaussian Splatting training")
     gs.add_argument(
+        "--gs-backend",
+        default="cuda",
+        choices=["cuda", "rocm"],
+        help="Gaussian backend implementation",
+    )
+    gs.add_argument(
+        "--rocm-env",
+        default="gaussian_splatting_rocm",
+        help="Conda environment name used for ROCm backend",
+    )
+    gs.add_argument(
         "--iterations",
         type=int,
         default=30000,
@@ -237,6 +259,10 @@ def main() -> int:
         output_root=output_root,
         gs_repo=gs_repo,
         conda_env=args.conda_env,
+        gs_backend=args.gs_backend,
+        rocm_env=args.rocm_env,
+        env_runner=args.env_runner,
+        uv_python=args.uv_python,
         dry_run=args.dry_run,
         resume=args.resume,
         # Stage flags

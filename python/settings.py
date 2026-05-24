@@ -24,6 +24,10 @@ class PipelineConfig:
     output_root: Path
     gs_repo: Path
     conda_env: str = "gaussian_splatting"
+    gs_backend: str = "cuda"
+    rocm_env: str = "gaussian_splatting_rocm"
+    env_runner: str = "conda"
+    uv_python: str = ""
     dry_run: bool = False
     resume: bool = False
 
@@ -188,3 +192,10 @@ class PipelineConfig:
             self.gs_output,
         ):
             d.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def active_gs_env(self) -> str:
+        """Return the configured environment name for the selected backend."""
+        if self.gs_backend == "rocm":
+            return self.rocm_env
+        return self.conda_env

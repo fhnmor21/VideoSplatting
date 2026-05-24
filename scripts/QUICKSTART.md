@@ -2,6 +2,8 @@
 
 Three standalone shell scripts for video → 3D Gaussian Splatting pipeline. Use these if you prefer bash over Python, or want to understand the underlying commands.
 
+Note: these shell scripts assume the standard CUDA-oriented gaussian-splatting setup. If you need ROCm backend selection and `conda`/`uv` runner choice, use `python/main.py --gs-backend rocm ...` from the Python pipeline.
+
 ---
 
 ## Scripts Overview
