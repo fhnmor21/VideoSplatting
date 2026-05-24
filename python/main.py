@@ -10,12 +10,23 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 
 from pipeline.runner import PipelineRunner
 from config.settings import PipelineConfig
+
+
+def resolve_gs_repo(args: argparse.Namespace, cwd: Path | None = None) -> Path:
+    """Resolve the gaussian-splatting checkout path for the selected backend."""
+    base = cwd or Path.cwd()
+    if args.gs_backend == "rocm" and args.gs_repo == Path("./gaussian-splatting"):
+        local_rocm = (base / "rocm-gsplat").resolve()
+        if local_rocm.exists():
+            return local_rocm
+    return args.gs_repo.resolve()
 
 
 def parse_args() -> argparse.Namespace:
@@ -251,7 +262,7 @@ def main() -> int:
         return 1
 
     output_root = args.output.resolve()
-    gs_repo = args.gs_repo.resolve()
+    gs_repo = resolve_gs_repo(args)
     vocab_tree = args.vocab_tree.resolve() if args.vocab_tree else None
 
     config = PipelineConfig(

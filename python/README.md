@@ -45,6 +45,7 @@ python -c "from diff_gaussian_rasterization import GaussianRasterizationSettings
 
 - Use `--gs-backend rocm` to switch Stage 3 backend selection.
 - For ROCm mode, `--gs-repo` should point to a GSplat-compatible checkout (for example `ROCm/gsplat`) rather than the Graphdeco CUDA repository.
+- If you keep a local `./rocm-gsplat` checkout in the project root, the CLI will prefer it automatically for `--gs-backend rocm`.
 - You can execute GS scripts with either `conda` (default) or `uv` runner:
   - `--env-runner conda --rocm-env <env_name>`
   - `--env-runner uv --uv-python /path/to/python`

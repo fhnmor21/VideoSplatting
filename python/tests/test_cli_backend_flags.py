@@ -1,5 +1,6 @@
 import unittest
 import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -51,6 +52,14 @@ class TestCliBackendFlags(unittest.TestCase):
             args = main.parse_args()
         self.assertEqual(args.env_runner, "uv")
         self.assertEqual(args.uv_python, "/opt/venvs/gs/bin/python")
+
+    def test_rocm_backend_prefers_local_rocm_gsplat_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "rocm-gsplat").mkdir()
+            with patch("sys.argv", ["main.py", "input.mp4", "--gs-backend", "rocm"]):
+                args = main.parse_args()
+            self.assertEqual(main.resolve_gs_repo(args, cwd=root), root / "rocm-gsplat")
 
 
 if __name__ == "__main__":
