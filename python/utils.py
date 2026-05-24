@@ -177,6 +177,17 @@ def run_in_uv(
     return run(str_args, dry_run=dry_run, cwd=cwd)
 
 
+def ensure_parent(path: Path) -> None:
+    """Create parent directory for a target file path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def copy_file(src: Path, dst: Path) -> None:
+    """Copy a file to destination while ensuring destination parent exists."""
+    ensure_parent(dst)
+    shutil.copy2(src, dst)
+
+
 def find_conda_sh() -> Optional[Path]:
     """Locate the conda.sh init script across common installation prefixes."""
     candidates = [

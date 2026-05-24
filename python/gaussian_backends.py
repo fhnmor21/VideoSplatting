@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 from typing import Callable, List, Sequence
 
 from config.settings import PipelineConfig
-from pipeline.utils import CommandError, log_warn
+from pipeline.utils import CommandError, copy_file, log_warn
 
 
 @dataclass
@@ -150,15 +151,24 @@ class RocmGaussianBackend(BaseGaussianBackend):
         super().__init__(cfg=cfg, name="rocm", env_name=cfg.rocm_env)
 
     def validate(self) -> bool:
-        if not super().validate():
-            return False
-
         if not self.cfg.rocm_env:
             log_warn("ROCm backend selected but --rocm-env is empty.")
             return False
 
         if self.cfg.env_runner == "uv" and not self.cfg.uv_python:
             log_warn("ROCm + uv runner requires --uv-python <path>.")
+            return False
+
+        if not self.cfg.gs_repo.exists():
+            log_warn(f"ROCm GSplat repository not found: {self.cfg.gs_repo}")
+            return False
+
+        train_script = self.cfg.gs_repo / self.cfg.gsplat_train_script
+        if not train_script.exists():
+            log_warn(
+                f"GSplat training script not found: {train_script}\n"
+                "  Set --gs-repo to a ROCm gsplat checkout or update gsplat_train_script."
+            )
             return False
 
         if not self.cfg.dry_run and not Path("/opt/rocm").exists():
@@ -169,7 +179,79 @@ class RocmGaussianBackend(BaseGaussianBackend):
             )
             return False
 
+        if not self.cfg.dry_run and self.cfg.env_runner == "uv":
+            try:
+                torch_check = subprocess.run(
+                    [
+                        self.cfg.uv_python,
+                        "-c",
+                        "import torch; print(torch.version.hip)",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                if torch_check.returncode != 0 or not torch_check.stdout.strip():
+                    log_warn(
+                        "ROCm backend requires a ROCm-enabled PyTorch environment.\n"
+                        "  Verify with: python -c \"import torch; print(torch.version.hip)\""
+                    )
+                    return False
+
+                gsplat_check = subprocess.run(
+                    [self.cfg.uv_python, "-c", "import gsplat"],
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                if gsplat_check.returncode != 0:
+                    log_warn(
+                        "ROCm backend requires gsplat import to succeed.\n"
+                        "  Verify with: python -c \"import gsplat\""
+                    )
+                    return False
+            except Exception as exc:
+                log_warn(f"ROCm runtime validation failed: {exc}")
+                return False
+
         return True
+
+    def build_train_cmd(self) -> List[str]:
+        return [
+            "python",
+            str(self.cfg.gs_repo / self.cfg.gsplat_train_script),
+            "--data_dir",
+            str(self.cfg.colmap_dense),
+            "--output_dir",
+            str(self.cfg.rocm_backend_output_dir),
+            "--iterations",
+            str(self.cfg.iterations),
+        ]
+
+    def build_render_cmd(self) -> List[str]:
+        script = self.cfg.gs_repo / "examples" / "render.py"
+        return [
+            "python",
+            str(script),
+            "--model_dir",
+            str(self.cfg.rocm_backend_output_dir),
+        ]
+
+    def build_metrics_cmd(self) -> List[str]:
+        script = self.cfg.gs_repo / "examples" / "metrics.py"
+        return [
+            "python",
+            str(script),
+            "--model_dir",
+            str(self.cfg.rocm_backend_output_dir),
+        ]
+
+    def finalize_outputs(self) -> bool:
+        candidate = self.cfg.rocm_backend_output_dir / "point_cloud.ply"
+        if not candidate.exists():
+            return False
+        copy_file(candidate, self.cfg.final_ply)
+        return self.cfg.final_ply.exists()
 
 
 def backend_for(cfg: PipelineConfig) -> BaseGaussianBackend:

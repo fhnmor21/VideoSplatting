@@ -2,6 +2,7 @@ import unittest
 import sys
 import tempfile
 from pathlib import Path
+import shutil
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -74,8 +75,8 @@ class TestGaussianBackends(unittest.TestCase):
         cfg = self.make_cfg("rocm")
         backend = backend_for(cfg)
         cmd = backend.build_train_cmd()
-        self.assertIn("--source_path", cmd)
-        self.assertIn("--model_path", cmd)
+        self.assertIn("--data_dir", cmd)
+        self.assertIn("--output_dir", cmd)
 
     def test_cuda_finalize_outputs_keeps_existing_layout(self):
         cfg = self.make_cfg("cuda")
@@ -94,6 +95,21 @@ class TestGaussianBackends(unittest.TestCase):
         trainer.backend.train = lambda runner: True
         trainer.backend.finalize_outputs = lambda: False
         self.assertFalse(trainer._train())
+
+    def test_rocm_finalize_maps_backend_ply_to_canonical_path(self):
+        cfg = self.make_cfg("rocm")
+        backend = backend_for(cfg)
+        fixture = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "rocm_backend_output"
+            / "point_cloud.ply"
+        )
+        out = cfg.rocm_backend_output_dir / "point_cloud.ply"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(fixture, out)
+        self.assertTrue(backend.finalize_outputs())
+        self.assertTrue(cfg.final_ply.exists())
 
 
 if __name__ == "__main__":

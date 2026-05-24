@@ -71,6 +71,8 @@ class PipelineConfig:
     test_holdout: int = 8
     checkpoint_interval: int = 7_000
     viewer_port: int = 6009
+    gsplat_train_script: str = "examples/simple_trainer.py"
+    gsplat_backend_subdir: str = "backend_rocm"
 
     # ------------------------------------------------------------------ #
     # Derived paths (computed on first access via properties)
@@ -181,6 +183,11 @@ class PipelineConfig:
             / f"iteration_{self.iterations}"
             / "point_cloud.ply"
         )
+
+    @property
+    def rocm_backend_output_dir(self) -> Path:
+        """Return backend-native output directory used by ROCm GSplat flow."""
+        return self.gs_output / self.gsplat_backend_subdir
 
     def ensure_dirs(self) -> None:
         """Create all output directories that must exist before the pipeline starts."""
