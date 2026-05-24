@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Callable, List, Sequence
 
 from config.settings import PipelineConfig
-from pipeline.utils import log_warn
+from pipeline.utils import CommandError, log_warn
 
 
 @dataclass
@@ -86,6 +86,13 @@ class BaseGaussianBackend:
             cmd += ["--checkpoint_iterations"] + ckpt_iters
         return cmd
 
+    def train(self, runner: Callable[[Sequence[str]], None]) -> bool:
+        try:
+            runner(self.build_train_cmd())
+        except CommandError:
+            return False
+        return True
+
     def build_render_cmd(self) -> List[str]:
         return [
             "python",
@@ -99,6 +106,16 @@ class BaseGaussianBackend:
             "--skip_train",
         ]
 
+    def render(self, runner: Callable[[Sequence[str]], None]) -> bool:
+        if not self.cfg.render_script.exists():
+            log_warn("render.py not found — skipping render step.")
+            return False
+        try:
+            runner(self.build_render_cmd())
+        except CommandError:
+            return False
+        return True
+
     def build_metrics_cmd(self) -> List[str]:
         return [
             "python",
@@ -108,6 +125,19 @@ class BaseGaussianBackend:
             "--iteration",
             str(self.cfg.iterations),
         ]
+
+    def metrics(self, runner: Callable[[Sequence[str]], None]) -> bool:
+        if not self.cfg.metrics_script.exists():
+            log_warn("metrics.py not found — skipping metrics step.")
+            return False
+        try:
+            runner(self.build_metrics_cmd())
+        except CommandError:
+            return False
+        return True
+
+    def finalize_outputs(self) -> bool:
+        return self.cfg.final_ply.exists()
 
 
 class CudaGaussianBackend(BaseGaussianBackend):

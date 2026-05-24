@@ -39,6 +39,13 @@ class TestGaussianBackends(unittest.TestCase):
         backend = backend_for(cfg)
         self.assertEqual(backend.name, "rocm")
 
+    def test_backend_factory_returns_cuda_adapter_by_default(self):
+        cfg = self.make_cfg("cuda")
+        backend = backend_for(cfg)
+        self.assertEqual(backend.name, "cuda")
+        self.assertTrue(hasattr(backend, "train"))
+        self.assertTrue(hasattr(backend, "finalize_outputs"))
+
     def test_cuda_train_command_uses_train_script(self):
         cfg = self.make_cfg("cuda")
         backend = backend_for(cfg)
@@ -68,6 +75,15 @@ class TestGaussianBackends(unittest.TestCase):
         cmd = backend.build_train_cmd()
         self.assertIn("--source_path", cmd)
         self.assertIn("--model_path", cmd)
+
+    def test_cuda_finalize_outputs_keeps_existing_layout(self):
+        cfg = self.make_cfg("cuda")
+        backend = backend_for(cfg)
+        cfg.gs_output.mkdir(parents=True, exist_ok=True)
+        target = cfg.final_ply
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("ply\n", encoding="utf-8")
+        self.assertTrue(backend.finalize_outputs())
 
 
 if __name__ == "__main__":
