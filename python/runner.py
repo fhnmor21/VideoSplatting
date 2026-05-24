@@ -156,16 +156,29 @@ class PipelineRunner:
 
         # GS repo check
         if self.cfg.run_training:
-            if self.cfg.gs_repo.exists() and self.cfg.train_script.exists():
+            if self.cfg.gs_backend == "rocm":
+                script_ok = self.cfg.gs_repo.exists() and self.cfg.gsplat_train_path.exists()
+            else:
+                script_ok = self.cfg.gs_repo.exists() and self.cfg.train_script.exists()
+
+            if script_ok:
                 log_success(f"GS repo: {self.cfg.gs_repo}")
             else:
-                log_warn(
-                    f"gaussian-splatting repo not found at: {self.cfg.gs_repo}\n"
-                    "  Clone it with:\n"
-                    "    git clone --recursive "
-                    "https://github.com/graphdeco-inria/gaussian-splatting\n"
-                    "    cd gaussian-splatting && conda env create -f environment.yml"
-                )
+                if self.cfg.gs_backend == "rocm":
+                    log_warn(
+                        f"ROCm gsplat repo or script not found at: {self.cfg.gs_repo}\n"
+                        "  Expected script:\n"
+                        f"    {self.cfg.gsplat_train_path}\n"
+                        "  Use a ROCm gsplat checkout for --gs-backend rocm."
+                    )
+                else:
+                    log_warn(
+                        f"gaussian-splatting repo not found at: {self.cfg.gs_repo}\n"
+                        "  Clone it with:\n"
+                        "    git clone --recursive "
+                        "https://github.com/graphdeco-inria/gaussian-splatting\n"
+                        "    cd gaussian-splatting && conda env create -f environment.yml"
+                    )
                 ok = False
 
         # Vocab tree advisory

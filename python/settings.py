@@ -165,6 +165,11 @@ class PipelineConfig:
         return self.gs_repo / "train.py"
 
     @property
+    def gsplat_train_path(self) -> Path:
+        """Return the path to the configured GSplat training script."""
+        return self.gs_repo / self.gsplat_train_script
+
+    @property
     def render_script(self) -> Path:
         """Return the path to the upstream gaussian-splatting render script."""
         return self.gs_repo / "render.py"
