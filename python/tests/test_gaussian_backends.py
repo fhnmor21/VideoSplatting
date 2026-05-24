@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config.settings import PipelineConfig
 from pipeline.gaussian_backends import backend_for
+from pipeline.stage_gaussian import GaussianTrainer
 
 
 class TestGaussianBackends(unittest.TestCase):
@@ -84,6 +85,15 @@ class TestGaussianBackends(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("ply\n", encoding="utf-8")
         self.assertTrue(backend.finalize_outputs())
+
+    def test_stage3_train_fails_when_finalize_missing_final_ply(self):
+        cfg = self.make_cfg("rocm")
+        cfg.env_runner = "uv"
+        cfg.uv_python = "/usr/bin/python3"
+        trainer = GaussianTrainer(cfg)
+        trainer.backend.train = lambda runner: True
+        trainer.backend.finalize_outputs = lambda: False
+        self.assertFalse(trainer._train())
 
 
 if __name__ == "__main__":

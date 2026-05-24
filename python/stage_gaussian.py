@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional, Sequence
 
 from config.settings import PipelineConfig
 from pipeline.gaussian_backends import backend_for
@@ -114,35 +114,44 @@ class GaussianTrainer:
     # Training
     # ------------------------------------------------------------------ #
 
+    def _exec(self, cmd: Sequence[str]) -> None:
+        """Run a backend-provided command with the configured environment runner."""
+        if self.cfg.env_runner == "conda" and self._conda_sh:
+            run_in_conda(
+                self._conda_sh,
+                self.backend.env_name,
+                cmd,
+                dry_run=self.cfg.dry_run,
+                cwd=self.cfg.gs_repo,
+            )
+        elif self.cfg.env_runner == "uv":
+            run_in_uv(
+                self.cfg.uv_python,
+                cmd,
+                dry_run=self.cfg.dry_run,
+                cwd=self.cfg.gs_repo,
+            )
+        else:
+            run(cmd, dry_run=self.cfg.dry_run, cwd=self.cfg.gs_repo)
+
     def _train(self) -> bool:
         """Launch gaussian-splatting training command and report elapsed time."""
         log_info("Training 3DGS model…  (this takes 20–90 min depending on GPU)")
         log_info(f"Monitor training at: http://127.0.0.1:{self.cfg.viewer_port}")
 
-        cmd = self.backend.build_train_cmd()
-
         t0 = time.time()
         try:
-            if self.cfg.env_runner == "conda" and self._conda_sh:
-                run_in_conda(
-                    self._conda_sh,
-                    self.backend.env_name,
-                    cmd,
-                    dry_run=self.cfg.dry_run,
-                    cwd=self.cfg.gs_repo,
-                )
-            elif self.cfg.env_runner == "uv":
-                run_in_uv(
-                    self.cfg.uv_python,
-                    cmd,
-                    dry_run=self.cfg.dry_run,
-                    cwd=self.cfg.gs_repo,
-                )
-            else:
-                # Fallback: hope the right Python is already active
-                run(cmd, dry_run=self.cfg.dry_run, cwd=self.cfg.gs_repo)
+            ok = self.backend.train(self._exec)
+            if not ok:
+                return False
         except CommandError as e:
             log_warn(f"Training failed: {e}")
+            return False
+
+        if not self.backend.finalize_outputs():
+            log_warn(
+                "Training completed but canonical final point_cloud.ply is missing."
+            )
             return False
 
         elapsed = time.time() - t0
@@ -160,57 +169,20 @@ class GaussianTrainer:
             return
 
         log_info("Rendering held-out test views…")
-        cmd = self.backend.build_render_cmd()
-
         try:
-            if self.cfg.env_runner == "conda" and self._conda_sh:
-                run_in_conda(
-                    self._conda_sh,
-                    self.backend.env_name,
-                    cmd,
-                    dry_run=self.cfg.dry_run,
-                    cwd=self.cfg.gs_repo,
-                )
-            elif self.cfg.env_runner == "uv":
-                run_in_uv(
-                    self.cfg.uv_python,
-                    cmd,
-                    dry_run=self.cfg.dry_run,
-                    cwd=self.cfg.gs_repo,
-                )
-            else:
-                run(cmd, dry_run=self.cfg.dry_run)
-            log_success(f"Renders saved → {self.cfg.gs_output / 'test'}")
+            ok = self.backend.render(self._exec)
+            if ok:
+                log_success(f"Renders saved → {self.cfg.gs_output / 'test'}")
         except CommandError as e:
             log_warn(f"Render step failed (non-fatal): {e}")
 
     def _metrics(self) -> None:
         """Compute image quality metrics for rendered test views."""
-        if not self.cfg.metrics_script.exists():
-            log_warn("metrics.py not found — skipping metrics step.")
-            return
-
         log_info("Computing PSNR / SSIM / LPIPS on test split…")
-        cmd = self.backend.build_metrics_cmd()
-
         try:
-            if self.cfg.env_runner == "conda" and self._conda_sh:
-                run_in_conda(
-                    self._conda_sh,
-                    self.backend.env_name,
-                    cmd,
-                    dry_run=self.cfg.dry_run,
-                    cwd=self.cfg.gs_repo,
-                )
-            elif self.cfg.env_runner == "uv":
-                run_in_uv(
-                    self.cfg.uv_python,
-                    cmd,
-                    dry_run=self.cfg.dry_run,
-                    cwd=self.cfg.gs_repo,
-                )
-            else:
-                run(cmd, dry_run=self.cfg.dry_run)
+            ok = self.backend.metrics(self._exec)
+            if not ok:
+                return
         except CommandError as e:
             log_warn(f"Metrics step failed (non-fatal): {e}")
             return
