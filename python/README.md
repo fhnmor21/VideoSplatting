@@ -44,6 +44,7 @@ python -c "from diff_gaussian_rasterization import GaussianRasterizationSettings
 ### ROCm backend notes
 
 - Use `--gs-backend rocm` to switch Stage 3 backend selection.
+- For ROCm mode, `--gs-repo` should point to a GSplat-compatible checkout (for example `ROCm/gsplat`) rather than the Graphdeco CUDA repository.
 - You can execute GS scripts with either `conda` (default) or `uv` runner:
   - `--env-runner conda --rocm-env <env_name>`
   - `--env-runner uv --uv-python /path/to/python`
@@ -51,6 +52,7 @@ python -c "from diff_gaussian_rasterization import GaussianRasterizationSettings
 
 ```bash
 python -c "import torch; print(torch.version.hip)"
+python -c "import gsplat; print(gsplat.__version__)"
 ```
 
 - Non-goal: this pipeline does not implement a remote CUDA backend.
@@ -83,7 +85,7 @@ python main.py building.mp4 --gs-backend cuda --env-runner conda --conda-env gau
 python main.py building.mp4 --gs-backend rocm --env-runner conda --rocm-env gaussian_splatting_rocm
 
 # ROCm backend via uv (explicit interpreter)
-python main.py building.mp4 --gs-backend rocm --env-runner uv --uv-python /opt/venvs/gs-rocm/bin/python
+python main.py building.mp4 --gs-backend rocm --gs-repo ~/rocm-gsplat --env-runner uv --uv-python /opt/venvs/gs-rocm/bin/python
 
 # With vocab tree for better loop closure
 python main.py building.mp4 --vocab-tree vocab_tree_flickr100K_words256K.bin

@@ -9,6 +9,12 @@ import main
 
 
 class TestCliBackendFlags(unittest.TestCase):
+    def test_default_backend_and_runner_are_cuda_conda(self):
+        with patch("sys.argv", ["main.py", "input.mp4"]):
+            args = main.parse_args()
+        self.assertEqual(args.gs_backend, "cuda")
+        self.assertEqual(args.env_runner, "conda")
+
     def test_default_backend_is_cuda(self):
         with patch("sys.argv", ["main.py", "input.mp4"]):
             args = main.parse_args()
