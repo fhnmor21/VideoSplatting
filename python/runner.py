@@ -128,7 +128,7 @@ class PipelineRunner:
         tools = {
             "ffmpeg": "https://ffmpeg.org/download.html",
             "ffprobe": "https://ffmpeg.org/download.html",
-            "colmap": "https://colmap.github.io/install.html",
+            "colmap": "Build COLMAP locally and add its bin directory to PATH",
         }
 
         for tool, hint in tools.items():
