@@ -113,7 +113,7 @@ building.mp4 (input video)
 | **GPU** | NVIDIA CUDA (RTX 3060 or better) | https://developer.nvidia.com/cuda-downloads |
 | **Python** | 3.8+ | https://www.python.org |
 | **ffmpeg** | ≥ 5.0 | https://ffmpeg.org/download.html |
-| **COLMAP** | ≥ 3.8 | https://colmap.github.io/install.html |
+| **COLMAP** | ≥ 3.8 | Build locally; requires Boost, Eigen3, and OpenImageIO dev packages |
 | **Miniconda** | (for conda env) | https://docs.conda.io/en/latest/miniconda.html |
 
 ### Gaussian Splatting Repository
@@ -568,11 +568,63 @@ sudo apt-get install colmap
 - Verify GPU with `nvidia-smi`
 - If missing, check NVIDIA drivers: `nvidia-smi`
 - Install CUDA: https://developer.nvidia.com/cuda-downloads
-- Verify CUDA in the conda env: 
+ - Verify CUDA in the conda env:
   ```bash
   conda activate gaussian_splatting
   python -c "import torch; print(torch.cuda.is_available())"
   ```
+
+**Problem:** `colmap` not found in PATH
+
+**Solution:** build COLMAP locally and add its install prefix to `PATH`:
+Required build dependencies:
+- Boost development files
+- Eigen3 development files
+- OpenImageIO development files
+- OpenImageIO tools package (provides `iconvert`)
+- SQLite3 development files
+- SuiteSparse / CHOLMOD development files (`libsuitesparse-dev`)
+- Ceres development files (`libceres-dev`)
+- CGAL development files (`libcgal-dev`)
+- Qt6 development files (`qt6-base-dev`, `qt6-declarative-dev`)
+- Qt6 SVG development files (`qt6-svg-dev`)
+- GLEW development files (`libglew-dev`)
+- METIS development files (`libmetis-dev`)
+
+Before COLMAP can run, build and install ONNX Runtime `v1.24.4` from source so
+that `libonnxruntime.so.1` is available in the same prefix or on the dynamic
+linker path:
+
+```bash
+git clone --recursive --branch v1.24.4 https://github.com/microsoft/onnxruntime.git
+cmake -S onnxruntime/cmake -B onnxruntime/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build onnxruntime/build -j
+cmake --install onnxruntime/build
+```
+
+```bash
+git clone --recursive https://github.com/colmap/colmap.git
+cmake -S colmap -B colmap/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build colmap/build -j
+cmake --install colmap/build
+export PATH="$HOME/.local/bin:$PATH"
+colmap --version
+```
+
+**Problem:** `gsplat` import fails in ROCm mode
+
+**Cause:** The active interpreter is not the `uv` env, or `--gs-repo` does not point at `./rocm-gsplat`.
+
+**Solution:**
+```bash
+python main.py building.mp4 --gs-backend rocm --env-runner uv --uv-python .venv/bin/python --gs-repo ./rocm-gsplat
+```
+
+Then verify:
+```bash
+.venv/bin/python -c "import torch; print(torch.version.hip)"
+.venv/bin/python -c "import gsplat; print(gsplat.__version__)"
+```
 
 ### Frame Extraction Problems
 
@@ -843,7 +895,7 @@ gs_pipeline/
 │   │
 │   └── stage_gaussian.py                ← GaussianTrainer
 │       ├── _validate_repo()
-│       ├── _train() — invoke train.py in conda env
+│       ├── _train() — invoke train.py in conda env or uv env
 │       ├── _render() — optional render step
 │       ├── _metrics() — optional metrics computation
 │       └── _print_summary()
