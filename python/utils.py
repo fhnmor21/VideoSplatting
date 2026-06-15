@@ -142,6 +142,7 @@ def run_in_conda(
     *,
     dry_run: bool = False,
     cwd: Optional[Path] = None,
+    env: Optional[dict] = None,
 ) -> subprocess.CompletedProcess:
     """
     Run a command inside a conda environment by sourcing conda.sh first.
@@ -154,6 +155,7 @@ def run_in_conda(
         ["bash", "-c", bash_cmd],
         dry_run=dry_run,
         cwd=cwd,
+        env=env,
     )
 
 
@@ -163,6 +165,7 @@ def run_in_uv(
     *,
     dry_run: bool = False,
     cwd: Optional[Path] = None,
+    env: Optional[dict] = None,
 ) -> subprocess.CompletedProcess:
     """Run a command via an explicit Python interpreter path."""
     if not python_bin:
@@ -174,7 +177,7 @@ def run_in_uv(
     else:
         str_args = [str(python_bin)] + str_args
 
-    return run(str_args, dry_run=dry_run, cwd=cwd)
+    return run(str_args, dry_run=dry_run, cwd=cwd, env=env)
 
 
 def ensure_parent(path: Path) -> None:

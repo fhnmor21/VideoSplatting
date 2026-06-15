@@ -132,7 +132,10 @@ class PipelineConfig:
         """Return configured COLMAP thread count or an OS-derived default."""
         if self.colmap_threads is not None:
             return self.colmap_threads
-        return os.cpu_count() or 4
+        total = os.cpu_count() or 4
+        if total <= 4:
+            return total
+        return max(4, total // 2)
 
     # ------------------------------------------------------------------ #
     # Derived camera params

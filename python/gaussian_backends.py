@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import subprocess
 from typing import Callable, List, Sequence
+import shutil
 
 from config.settings import PipelineConfig
 from pipeline.utils import CommandError, copy_file, log_warn
@@ -210,6 +212,37 @@ class RocmGaussianBackend(BaseGaussianBackend):
                         "  Verify with: python -c \"import gsplat\""
                     )
                     return False
+
+                raster_probe = (
+                    "import torch; "
+                    "from gsplat.rendering import rasterization; "
+                    "device='cuda'; "
+                    "means=torch.zeros((1,3), device=device); "
+                    "quats=torch.tensor([[1.0,0.0,0.0,0.0]], device=device); "
+                    "scales=torch.ones((1,3), device=device)*0.01; "
+                    "opacities=torch.ones((1,), device=device)*0.5; "
+                    "colors=torch.ones((1,1,3), device=device); "
+                    "viewmats=torch.eye(4, device=device).unsqueeze(0); "
+                    "Ks=torch.tensor([[[100.0,0.0,64.0],[0.0,100.0,64.0],[0.0,0.0,1.0]]], device=device); "
+                    "rasterization(means, quats, scales, opacities, colors, viewmats, Ks, 128, 128)"
+                )
+                raster_check = subprocess.run(
+                    [self.cfg.uv_python, "-c", raster_probe],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    env={**os.environ, "HSA_OVERRIDE_GFX_VERSION": "11.0.0"},
+                )
+                if raster_check.returncode != 0:
+                    stderr = (raster_check.stderr or "").strip()
+                    detail = f"\n  Details: {stderr.splitlines()[-1]}" if stderr else ""
+                    log_warn(
+                        "ROCm gsplat runtime probe failed before training.\n"
+                        "  This environment can import gsplat but crashes when launching rasterization kernels.\n"
+                        "  Verify with: python -c \"from gsplat.rendering import rasterization; ...\""
+                        f"{detail}"
+                    )
+                    return False
             except Exception as exc:
                 log_warn(f"ROCm runtime validation failed: {exc}")
                 return False
@@ -220,12 +253,17 @@ class RocmGaussianBackend(BaseGaussianBackend):
         return [
             "python",
             str(self.cfg.gs_repo / self.cfg.gsplat_train_script),
-            "--data_dir",
+            "default",
+            "--data-dir",
             str(self.cfg.colmap_dense),
-            "--output_dir",
+            "--data-factor",
+            "1",
+            "--result-dir",
             str(self.cfg.rocm_backend_output_dir),
-            "--iterations",
+            "--max-steps",
             str(self.cfg.iterations),
+            "--disable-viewer",
+            "--save-ply",
         ]
 
     def build_render_cmd(self) -> List[str]:
@@ -248,9 +286,21 @@ class RocmGaussianBackend(BaseGaussianBackend):
 
     def finalize_outputs(self) -> bool:
         candidate = self.cfg.rocm_backend_output_dir / "point_cloud.ply"
-        if not candidate.exists():
+        if candidate.exists():
+            copy_file(candidate, self.cfg.final_ply)
+            return self.cfg.final_ply.exists()
+
+        ply_dir = self.cfg.rocm_backend_output_dir / "ply"
+        if not ply_dir.exists():
             return False
-        copy_file(candidate, self.cfg.final_ply)
+
+        ply_files = sorted(ply_dir.glob("point_cloud_*.ply"))
+        if not ply_files:
+            return False
+
+        latest = max(ply_files, key=lambda p: p.stat().st_mtime)
+        self.cfg.final_ply.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(latest, self.cfg.final_ply)
         return self.cfg.final_ply.exists()
 
 

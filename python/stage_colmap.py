@@ -42,6 +42,10 @@ class ColmapReconstructor:
         """Store shared pipeline configuration for COLMAP processing."""
         self.cfg = config
 
+    def _use_colmap_gpu(self) -> bool:
+        """Return True when COLMAP should run GPU-accelerated operations."""
+        return self.cfg.colmap_gpu >= 0
+
     # ------------------------------------------------------------------ #
     # Public entry point
     # ------------------------------------------------------------------ #
@@ -147,11 +151,11 @@ class ColmapReconstructor:
             "--ImageReader.single_camera",
             "1",  # all frames = same phone/lens
             # SIFT — tuned for dark, low-texture interiors
-            "--SiftExtraction.use_gpu",
-            "1",
-            "--SiftExtraction.gpu_index",
+            "--FeatureExtraction.use_gpu",
+            "1" if self._use_colmap_gpu() else "0",
+            "--FeatureExtraction.gpu_index",
             str(self.cfg.colmap_gpu),
-            "--SiftExtraction.num_threads",
+            "--FeatureExtraction.num_threads",
             str(self.cfg.cpu_threads),
             "--SiftExtraction.max_num_features",
             "8192",
@@ -190,11 +194,11 @@ class ColmapReconstructor:
             "sequential_matcher",
             "--database_path",
             db,
-            "--SiftMatching.use_gpu",
-            "1",
-            "--SiftMatching.gpu_index",
+            "--FeatureMatching.use_gpu",
+            "1" if self._use_colmap_gpu() else "0",
+            "--FeatureMatching.gpu_index",
             str(self.cfg.colmap_gpu),
-            "--SiftMatching.num_threads",
+            "--FeatureMatching.num_threads",
             str(self.cfg.cpu_threads),
             "--SiftMatching.max_ratio",
             "0.80",  # Lowe ratio test
@@ -242,11 +246,11 @@ class ColmapReconstructor:
             "vocab_tree_matcher",
             "--database_path",
             db,
-            "--SiftMatching.use_gpu",
-            "1",
-            "--SiftMatching.gpu_index",
+            "--FeatureMatching.use_gpu",
+            "1" if self._use_colmap_gpu() else "0",
+            "--FeatureMatching.gpu_index",
             str(self.cfg.colmap_gpu),
-            "--SiftMatching.num_threads",
+            "--FeatureMatching.num_threads",
             str(self.cfg.cpu_threads),
             "--SiftMatching.max_ratio",
             "0.80",
@@ -302,7 +306,7 @@ class ColmapReconstructor:
             # Bundle adjustment
             "--Mapper.ba_local_num_images",
             "6",
-            "--Mapper.ba_global_images_ratio",
+            "--Mapper.ba_global_frames_ratio",
             "1.1",
             "--Mapper.ba_global_points_ratio",
             "1.1",

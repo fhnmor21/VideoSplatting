@@ -163,15 +163,19 @@ git clone <this-repo>  # or download as zip
 cd gs_pipeline
 ```
 
-### 2. Install Python Dependencies (Optional)
+### 2. Install Python Dependencies
 
-This project uses only the Python standard library for orchestration. However, for better output or future extensions, you can optionally install:
+The pipeline itself is standard-library only, but the ROCm training stage needs
+the gsplat runtime environment:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements-rocm.txt
 ```
 
-Currently empty, but placeholder for future nice-to-haves like `tqdm`, `rich`, etc.
+This installs the packages listed in `rocm-gsplat/examples/requirements.txt`,
+including `imageio[ffmpeg]`, `tyro`, `viser`, `torchmetrics[image]`,
+`opencv-python`, `tensorboard`, `tensorly`, `splines`, and the optional
+`fused-ssim` dependency used by the trainer.
 
 ### 3. Verify All Tools
 

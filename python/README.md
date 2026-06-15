@@ -54,6 +54,16 @@ uv pip install --python .venv/bin/python torch==2.5.1+rocm6.2 torchvision==0.20.
 python main.py building.mp4 --gs-backend rocm --env-runner uv --uv-python .venv/bin/python --gs-repo ./rocm-gsplat
 ```
 
+- Install the ROCm gsplat runtime dependencies before Stage 3:
+
+```bash
+python -m pip install -r ../requirements-rocm.txt
+```
+
+- This pulls in the packages required by `rocm-gsplat/examples/simple_trainer.py`,
+  including `imageio[ffmpeg]`, `tyro`, `viser`, `torchmetrics[image]`,
+  `opencv-python`, `tensorboard`, `tensorly`, `splines`, and `fused-ssim`.
+
 - Verify ROCm PyTorch and gsplat in your environment:
 
 ```bash

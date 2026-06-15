@@ -116,6 +116,10 @@ class GaussianTrainer:
 
     def _exec(self, cmd: Sequence[str]) -> None:
         """Run a backend-provided command with the configured environment runner."""
+        env = None
+        if self.cfg.gs_backend == "rocm":
+            env = {"HSA_OVERRIDE_GFX_VERSION": "11.0.0"}
+
         if self.cfg.env_runner == "conda" and self._conda_sh:
             run_in_conda(
                 self._conda_sh,
@@ -123,6 +127,7 @@ class GaussianTrainer:
                 cmd,
                 dry_run=self.cfg.dry_run,
                 cwd=self.cfg.gs_repo,
+                env=env,
             )
         elif self.cfg.env_runner == "uv":
             run_in_uv(
@@ -130,9 +135,10 @@ class GaussianTrainer:
                 cmd,
                 dry_run=self.cfg.dry_run,
                 cwd=self.cfg.gs_repo,
+                env=env,
             )
         else:
-            run(cmd, dry_run=self.cfg.dry_run, cwd=self.cfg.gs_repo)
+            run(cmd, dry_run=self.cfg.dry_run, cwd=self.cfg.gs_repo, env=env)
 
     def _train(self) -> bool:
         """Launch gaussian-splatting training command and report elapsed time."""

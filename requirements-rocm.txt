@@ -1,0 +1,2 @@
+# Install the ROCm gsplat runtime dependencies used by Stage 3.
+-r rocm-gsplat/examples/requirements.txt

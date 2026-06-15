@@ -3,11 +3,14 @@ import sys
 import tempfile
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config.settings import PipelineConfig
 from pipeline.gaussian_backends import backend_for
+import pipeline.gaussian_backends as gaussian_backends
+import pipeline.stage_gaussian as stage_gaussian
 from pipeline.stage_gaussian import GaussianTrainer
 
 
@@ -75,8 +78,17 @@ class TestGaussianBackends(unittest.TestCase):
         cfg = self.make_cfg("rocm")
         backend = backend_for(cfg)
         cmd = backend.build_train_cmd()
-        self.assertIn("--data_dir", cmd)
-        self.assertIn("--output_dir", cmd)
+        self.assertEqual(cmd[:2], ["python", str(cfg.gs_repo / cfg.gsplat_train_script)])
+        self.assertEqual(cmd[2], "default")
+        self.assertIn("--data-dir", cmd)
+        self.assertIn(str(cfg.colmap_dense), cmd)
+        self.assertIn("--data-factor", cmd)
+        self.assertIn("1", cmd)
+        self.assertIn("--result-dir", cmd)
+        self.assertIn(str(cfg.rocm_backend_output_dir), cmd)
+        self.assertIn("--max-steps", cmd)
+        self.assertIn(str(cfg.iterations), cmd)
+        self.assertIn("--disable-viewer", cmd)
 
     def test_cuda_finalize_outputs_keeps_existing_layout(self):
         cfg = self.make_cfg("cuda")
@@ -96,6 +108,33 @@ class TestGaussianBackends(unittest.TestCase):
         trainer.backend.finalize_outputs = lambda: False
         self.assertFalse(trainer._train())
 
+    def test_stage3_exec_sets_rocm_override_for_uv_runner(self):
+        cfg = self.make_cfg("rocm")
+        cfg.env_runner = "uv"
+        cfg.uv_python = "/usr/bin/python3"
+        trainer = GaussianTrainer(cfg)
+
+        captured = {}
+
+        original = GaussianTrainer._exec.__globals__["run_in_uv"]
+
+        def fake_run_in_uv(python_bin, args, *, dry_run=False, cwd=None, env=None):
+            captured["python_bin"] = python_bin
+            captured["args"] = list(args)
+            captured["dry_run"] = dry_run
+            captured["cwd"] = cwd
+            captured["env"] = env
+
+        try:
+            GaussianTrainer._exec.__globals__["run_in_uv"] = fake_run_in_uv
+            trainer._exec(["python", "-c", "print('ok')"])
+        finally:
+            GaussianTrainer._exec.__globals__["run_in_uv"] = original
+
+        self.assertEqual(captured.get("python_bin"), cfg.uv_python)
+        self.assertEqual(captured.get("args"), ["python", "-c", "print('ok')"])
+        self.assertEqual(captured.get("env"), {"HSA_OVERRIDE_GFX_VERSION": "11.0.0"})
+
     def test_rocm_finalize_maps_backend_ply_to_canonical_path(self):
         cfg = self.make_cfg("rocm")
         backend = backend_for(cfg)
@@ -110,6 +149,47 @@ class TestGaussianBackends(unittest.TestCase):
         shutil.copy2(fixture, out)
         self.assertTrue(backend.finalize_outputs())
         self.assertTrue(cfg.final_ply.exists())
+
+    def test_rocm_finalize_copies_latest_trainer_ply_from_ply_dir(self):
+        cfg = self.make_cfg("rocm")
+        backend = backend_for(cfg)
+        backend_ply = cfg.rocm_backend_output_dir / "ply" / "point_cloud_29999.ply"
+        backend_ply.parent.mkdir(parents=True, exist_ok=True)
+        backend_ply.write_text("ply\n", encoding="utf-8")
+
+        self.assertTrue(backend.finalize_outputs())
+        self.assertTrue(cfg.final_ply.exists())
+        self.assertEqual(cfg.final_ply.read_text(encoding="utf-8"), "ply\n")
+
+    def test_rocm_uv_validate_runs_runtime_rasterization_probe(self):
+        cfg = self.make_cfg("rocm")
+        cfg.dry_run = False
+        cfg.env_runner = "uv"
+        cfg.uv_python = "/usr/bin/python3"
+        train_script = cfg.gs_repo / cfg.gsplat_train_script
+        train_script.parent.mkdir(parents=True, exist_ok=True)
+        train_script.write_text("print('trainer')\n", encoding="utf-8")
+        backend = backend_for(cfg)
+
+        calls = []
+        original = gaussian_backends.subprocess.run
+
+        def fake_run(args, **kwargs):
+            calls.append((list(args), kwargs))
+            if "torch.version.hip" in args[2]:
+                return SimpleNamespace(returncode=0, stdout="7.0\n", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        try:
+            gaussian_backends.subprocess.run = fake_run
+            self.assertTrue(backend.validate())
+        finally:
+            gaussian_backends.subprocess.run = original
+
+        joined = "\n".join(" ".join(cmd) for cmd, _ in calls)
+        self.assertIn("import torch; print(torch.version.hip)", joined)
+        self.assertIn("import gsplat", joined)
+        self.assertIn("from gsplat.rendering import rasterization", joined)
 
 
 if __name__ == "__main__":
