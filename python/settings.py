@@ -24,6 +24,10 @@ class PipelineConfig:
     output_root: Path
     gs_repo: Path
     conda_env: str = "gaussian_splatting"
+    gs_backend: str = "cuda"
+    rocm_env: str = "gaussian_splatting_rocm"
+    env_runner: str = "conda"
+    uv_python: str = ""
     dry_run: bool = False
     resume: bool = False
 
@@ -67,6 +71,8 @@ class PipelineConfig:
     test_holdout: int = 8
     checkpoint_interval: int = 7_000
     viewer_port: int = 6009
+    gsplat_train_script: str = "examples/simple_trainer.py"
+    gsplat_backend_subdir: str = "backend_rocm"
 
     # ------------------------------------------------------------------ #
     # Derived paths (computed on first access via properties)
@@ -126,7 +132,10 @@ class PipelineConfig:
         """Return configured COLMAP thread count or an OS-derived default."""
         if self.colmap_threads is not None:
             return self.colmap_threads
-        return os.cpu_count() or 4
+        total = os.cpu_count() or 4
+        if total <= 4:
+            return total
+        return max(4, total // 2)
 
     # ------------------------------------------------------------------ #
     # Derived camera params
@@ -159,6 +168,11 @@ class PipelineConfig:
         return self.gs_repo / "train.py"
 
     @property
+    def gsplat_train_path(self) -> Path:
+        """Return the path to the configured GSplat training script."""
+        return self.gs_repo / self.gsplat_train_script
+
+    @property
     def render_script(self) -> Path:
         """Return the path to the upstream gaussian-splatting render script."""
         return self.gs_repo / "render.py"
@@ -178,6 +192,11 @@ class PipelineConfig:
             / "point_cloud.ply"
         )
 
+    @property
+    def rocm_backend_output_dir(self) -> Path:
+        """Return backend-native output directory used by ROCm GSplat flow."""
+        return self.gs_output / self.gsplat_backend_subdir
+
     def ensure_dirs(self) -> None:
         """Create all output directories that must exist before the pipeline starts."""
         for d in (
@@ -188,3 +207,10 @@ class PipelineConfig:
             self.gs_output,
         ):
             d.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def active_gs_env(self) -> str:
+        """Return the configured environment name for the selected backend."""
+        if self.gs_backend == "rocm":
+            return self.rocm_env
+        return self.conda_env

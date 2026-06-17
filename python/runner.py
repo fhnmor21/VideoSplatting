@@ -128,7 +128,7 @@ class PipelineRunner:
         tools = {
             "ffmpeg": "https://ffmpeg.org/download.html",
             "ffprobe": "https://ffmpeg.org/download.html",
-            "colmap": "https://colmap.github.io/install.html",
+            "colmap": "Build COLMAP locally and add its bin directory to PATH",
         }
 
         for tool, hint in tools.items():
@@ -143,23 +143,42 @@ class PipelineRunner:
         if gpu_info:
             log_success(f"GPU: {gpu_info}")
         else:
-            log_warn(
-                "No NVIDIA GPU detected. COLMAP and 3DGS training both require CUDA.\n"
-                "  COLMAP can run on CPU (slow) but 3DGS cannot."
-            )
+            if self.cfg.gs_backend == "rocm":
+                log_warn(
+                    "No NVIDIA GPU detected. ROCm backend selected; ensure ROCm is installed.\n"
+                    "  Verify with: python -c \"import torch; print(torch.version.hip)\""
+                )
+            else:
+                log_warn(
+                    "No NVIDIA GPU detected. COLMAP and CUDA 3DGS usually need NVIDIA.\n"
+                    "  COLMAP can run on CPU (slow)."
+                )
 
         # GS repo check
         if self.cfg.run_training:
-            if self.cfg.gs_repo.exists() and self.cfg.train_script.exists():
+            if self.cfg.gs_backend == "rocm":
+                script_ok = self.cfg.gs_repo.exists() and self.cfg.gsplat_train_path.exists()
+            else:
+                script_ok = self.cfg.gs_repo.exists() and self.cfg.train_script.exists()
+
+            if script_ok:
                 log_success(f"GS repo: {self.cfg.gs_repo}")
             else:
-                log_warn(
-                    f"gaussian-splatting repo not found at: {self.cfg.gs_repo}\n"
-                    "  Clone it with:\n"
-                    "    git clone --recursive "
-                    "https://github.com/graphdeco-inria/gaussian-splatting\n"
-                    "    cd gaussian-splatting && conda env create -f environment.yml"
-                )
+                if self.cfg.gs_backend == "rocm":
+                    log_warn(
+                        f"ROCm gsplat repo or script not found at: {self.cfg.gs_repo}\n"
+                        "  Expected script:\n"
+                        f"    {self.cfg.gsplat_train_path}\n"
+                        "  Use a ROCm gsplat checkout for --gs-backend rocm."
+                    )
+                else:
+                    log_warn(
+                        f"gaussian-splatting repo not found at: {self.cfg.gs_repo}\n"
+                        "  Clone it with:\n"
+                        "    git clone --recursive "
+                        "https://github.com/graphdeco-inria/gaussian-splatting\n"
+                        "    cd gaussian-splatting && conda env create -f environment.yml"
+                    )
                 ok = False
 
         # Vocab tree advisory
@@ -212,7 +231,12 @@ class PipelineRunner:
         print(f"  Video        : {cfg.video}")
         print(f"  Output root  : {cfg.output_root}")
         print(f"  GS repo      : {cfg.gs_repo}")
-        print(f"  Conda env    : {cfg.conda_env}")
+        print(f"  GS backend   : {cfg.gs_backend}")
+        print(f"  Env runner   : {cfg.env_runner}")
+        if cfg.env_runner == "conda":
+            print(f"  Conda env    : {cfg.active_gs_env}")
+        else:
+            print(f"  UV python    : {cfg.uv_python}")
         print(f"  Iterations   : {cfg.iterations}")
         print(f"  Resolution   : cap {cfg.resolution_cap}px")
         print(f"  Dry run      : {cfg.dry_run}")

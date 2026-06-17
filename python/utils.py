@@ -142,6 +142,7 @@ def run_in_conda(
     *,
     dry_run: bool = False,
     cwd: Optional[Path] = None,
+    env: Optional[dict] = None,
 ) -> subprocess.CompletedProcess:
     """
     Run a command inside a conda environment by sourcing conda.sh first.
@@ -154,7 +155,40 @@ def run_in_conda(
         ["bash", "-c", bash_cmd],
         dry_run=dry_run,
         cwd=cwd,
+        env=env,
     )
+
+
+def run_in_uv(
+    python_bin: str,
+    args: Sequence,
+    *,
+    dry_run: bool = False,
+    cwd: Optional[Path] = None,
+    env: Optional[dict] = None,
+) -> subprocess.CompletedProcess:
+    """Run a command via an explicit Python interpreter path."""
+    if not python_bin:
+        raise CommandError("uv runner requires a non-empty Python interpreter path")
+
+    str_args = [str(a) for a in args]
+    if str_args and str_args[0] == "python":
+        str_args[0] = str(python_bin)
+    else:
+        str_args = [str(python_bin)] + str_args
+
+    return run(str_args, dry_run=dry_run, cwd=cwd, env=env)
+
+
+def ensure_parent(path: Path) -> None:
+    """Create parent directory for a target file path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def copy_file(src: Path, dst: Path) -> None:
+    """Copy a file to destination while ensuring destination parent exists."""
+    ensure_parent(dst)
+    shutil.copy2(src, dst)
 
 
 def find_conda_sh() -> Optional[Path]:

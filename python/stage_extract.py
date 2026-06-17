@@ -129,10 +129,12 @@ class FrameExtractor:
         MAX = self.cfg.max_gap
         Q = self.cfg.frame_quality
 
-        # Build the select expression (escaped commas)
+        # Build the select expression (escaped commas).
+        # Bootstrap selection when prev_selected_t is NaN (no prior selected frame).
         select_expr = (
+            f"if(isnan(prev_selected_t)\\,1\\,"
             f"gt(scene\\,{T})*gte(t-prev_selected_t\\,{MIN})"
-            f"+gte(t-prev_selected_t\\,{MAX})"
+            f"+gte(t-prev_selected_t\\,{MAX}))"
         )
 
         output_pattern = str(frames_dir / "frame_%06d.jpg")

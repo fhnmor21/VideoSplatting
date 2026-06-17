@@ -26,11 +26,12 @@ gaussian/point_cloud/iteration_30000/point_cloud.ply
 | Tool | Version | Install |
 |------|---------|---------|
 | ffmpeg + ffprobe | ≥ 5.0 | https://ffmpeg.org/download.html |
-| COLMAP | ≥ 3.8 | https://colmap.github.io/install.html |
-| CUDA GPU | any | Required for 3DGS training |
+| COLMAP | ≥ 3.8 | Build locally; requires Boost, Eigen3, OpenImageIO dev/tools, SQLite3, libsuitesparse dev, Ceres dev, CGAL dev, Qt6 SVG dev, GLEW dev, and METIS dev packages |
+| CUDA GPU | any | Required for default `--gs-backend cuda` |
+| ROCm GPU stack | any | Required for `--gs-backend rocm` |
 | Miniconda | any | https://docs.conda.io/en/latest/miniconda.html |
 
-### gaussian-splatting repo
+### CUDA gaussian-splatting repo
 ```bash
 git clone --recursive https://github.com/graphdeco-inria/gaussian-splatting
 cd gaussian-splatting
@@ -38,6 +39,78 @@ conda env create -f environment.yml
 conda activate gaussian_splatting
 # Verify CUDA extensions compiled:
 python -c "from diff_gaussian_rasterization import GaussianRasterizationSettings; print('OK')"
+```
+
+### ROCm backend notes
+
+- Use `--gs-backend rocm` to switch Stage 3 backend selection.
+- For ROCm mode, `--gs-repo` should point to a GSplat-compatible checkout (for example `ROCm/gsplat`) rather than the Graphdeco CUDA repository.
+- If you keep a local `./rocm-gsplat` checkout in the project root, the CLI will prefer it automatically for `--gs-backend rocm`.
+- Recommended local workflow on this machine:
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python torch==2.5.1+rocm6.2 torchvision==0.20.1+rocm6.2 torchaudio==2.5.1+rocm6.2 --index-url https://download.pytorch.org/whl/rocm6.2
+python main.py building.mp4 --gs-backend rocm --env-runner uv --uv-python .venv/bin/python --gs-repo ./rocm-gsplat
+```
+
+- Install the ROCm gsplat runtime dependencies before Stage 3:
+
+```bash
+python -m pip install -r ../requirements-rocm.txt
+```
+
+- This pulls in the packages required by `rocm-gsplat/examples/simple_trainer.py`,
+  including `imageio[ffmpeg]`, `tyro`, `viser`, `torchmetrics[image]`,
+  `opencv-python`, `tensorboard`, `tensorly`, `splines`, and `fused-ssim`.
+
+- Verify ROCm PyTorch and gsplat in your environment:
+
+```bash
+.venv/bin/python -c "import torch; print(torch.version.hip)"
+.venv/bin/python -c "import gsplat; print(gsplat.__version__)"
+```
+
+- Non-goal: this pipeline does not implement a remote CUDA backend.
+
+### Local COLMAP build
+
+If COLMAP is not already on `PATH`, build it locally and add the install prefix
+to `PATH` before running the pipeline:
+
+Required build dependencies:
+- Boost development files
+- Eigen3 development files
+- OpenImageIO development files
+- OpenImageIO tools package (provides `iconvert`)
+- SQLite3 development files
+- SuiteSparse / CHOLMOD development files (`libsuitesparse-dev`)
+- Ceres development files (`libceres-dev`)
+- CGAL development files (`libcgal-dev`)
+- Qt6 development files (`qt6-base-dev`, `qt6-declarative-dev`)
+- Qt6 SVG development files (`qt6-svg-dev`)
+- GLEW development files (`libglew-dev`)
+- METIS development files (`libmetis-dev`)
+
+Before COLMAP can run, build and install ONNX Runtime `v1.24.4` from source so
+that `libonnxruntime.so.1` is available in the same prefix or on the dynamic
+linker path:
+
+```bash
+git clone --recursive --branch v1.24.4 https://github.com/microsoft/onnxruntime.git
+cmake -S onnxruntime/cmake -B onnxruntime/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build onnxruntime/build -j
+cmake --install onnxruntime/build
+```
+
+```bash
+git clone --recursive https://github.com/colmap/colmap.git
+cmake -S colmap -B colmap/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build colmap/build -j
+cmake --install colmap/build
+
+export PATH="$HOME/.local/bin:$PATH"
+colmap --version
 ```
 
 ### Vocab tree (optional — improves loop closure in revisited rooms)
@@ -55,11 +128,20 @@ wget https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin
 # Clone / copy this project
 cd gs_pipeline
 
-# Run the full pipeline (gaussian-splatting repo assumed at ./gaussian-splatting)
+# Run the full pipeline (CUDA default assumes ./gaussian-splatting)
 python main.py building.mp4
 
 # Specify the repo location
 python main.py building.mp4 -o ./output --gs-repo ~/gaussian-splatting
+
+# CUDA backend (default) via conda
+python main.py building.mp4 --gs-backend cuda --env-runner conda --conda-env gaussian_splatting
+
+# ROCm backend via conda
+python main.py building.mp4 --gs-backend rocm --env-runner conda --rocm-env gaussian_splatting_rocm
+
+# ROCm backend via uv (explicit interpreter)
+python main.py building.mp4 --gs-backend rocm --gs-repo ~/rocm-gsplat --env-runner uv --uv-python .venv/bin/python
 
 # With vocab tree for better loop closure
 python main.py building.mp4 --vocab-tree vocab_tree_flickr100K_words256K.bin

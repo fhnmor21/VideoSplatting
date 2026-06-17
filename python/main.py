@@ -10,12 +10,23 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 
 from pipeline.runner import PipelineRunner
 from config.settings import PipelineConfig
+
+
+def resolve_gs_repo(args: argparse.Namespace, cwd: Path | None = None) -> Path:
+    """Resolve the gaussian-splatting checkout path for the selected backend."""
+    base = cwd or Path.cwd()
+    if args.gs_backend == "rocm" and args.gs_repo == Path("./gaussian-splatting"):
+        local_rocm = (base / "rocm-gsplat").resolve()
+        if local_rocm.exists():
+            return local_rocm
+    return args.gs_repo.resolve()
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,6 +62,17 @@ def parse_args() -> argparse.Namespace:
         "--conda-env",
         default="gaussian_splatting",
         help="Conda environment name that has the GS dependencies installed",
+    )
+    p.add_argument(
+        "--env-runner",
+        default="conda",
+        choices=["conda", "uv"],
+        help="Environment runner used for gaussian-splatting commands",
+    )
+    p.add_argument(
+        "--uv-python",
+        default="",
+        help="Path to Python interpreter when --env-runner uv",
     )
     p.add_argument(
         "--dry-run",
@@ -158,6 +180,17 @@ def parse_args() -> argparse.Namespace:
     # ------------------------------------------------------------------ #
     gs = p.add_argument_group("Gaussian Splatting training")
     gs.add_argument(
+        "--gs-backend",
+        default="cuda",
+        choices=["cuda", "rocm"],
+        help="Gaussian backend implementation",
+    )
+    gs.add_argument(
+        "--rocm-env",
+        default="gaussian_splatting_rocm",
+        help="Conda environment name used for ROCm backend",
+    )
+    gs.add_argument(
         "--iterations",
         type=int,
         default=30000,
@@ -229,7 +262,7 @@ def main() -> int:
         return 1
 
     output_root = args.output.resolve()
-    gs_repo = args.gs_repo.resolve()
+    gs_repo = resolve_gs_repo(args)
     vocab_tree = args.vocab_tree.resolve() if args.vocab_tree else None
 
     config = PipelineConfig(
@@ -237,6 +270,10 @@ def main() -> int:
         output_root=output_root,
         gs_repo=gs_repo,
         conda_env=args.conda_env,
+        gs_backend=args.gs_backend,
+        rocm_env=args.rocm_env,
+        env_runner=args.env_runner,
+        uv_python=args.uv_python,
         dry_run=args.dry_run,
         resume=args.resume,
         # Stage flags
